@@ -105,7 +105,7 @@ export default function DevicesScreen() {
             <View style={styles.empty}>
               <Text style={styles.emptyText}>No devices registered yet.</Text>
             </View>
-          ) : null
+          ) : undefined
         }
       />
     </SafeAreaView>

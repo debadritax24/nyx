@@ -67,7 +67,7 @@ export class PersistentMutationQueue {
 
   private static async getFileSystem() {
     try {
-      return require('expo-file-system');
+      return require('expo-file-system/legacy');
     } catch {
       return null;
     }

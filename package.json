@@ -4,12 +4,14 @@
   "private": true,
   "description": "NYX offline-first client-side encrypted authenticator",
   "scripts": {
-    "lint": "npm --prefix frontend run lint",
-    "typecheck": "npm --prefix frontend run typecheck",
+    "start": "npm --prefix frontend start",
+    "android": "npm --prefix frontend run android",
+    "ios": "npm --prefix frontend run ios",
+    "test": "npm --prefix frontend test && npm --prefix backend test",
     "test:frontend": "npm --prefix frontend test",
-    "test:backend": "npm --prefix backend test"
-  },
-  "devDependencies": {
-    "prettier": "^3.4.2"
+    "test:backend": "npm --prefix backend test",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "check": "npm run typecheck && npm test",
+    "lint": "npm --prefix frontend run lint"
   }
 }
