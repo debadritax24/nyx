@@ -178,4 +178,4 @@ To report a potential vulnerability or cryptographic defect, please review [docs
 
 ## License
 
-This project is licensed under the terms of the [LICENSE](file:///home/tushardevx01/Documents/nyx/LICENSE) file.
+This project is licensed under the terms of the [LICENSE](https://github.com/debadritax24/nyx/blob/main/LICENSE) file.
