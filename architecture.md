@@ -216,13 +216,21 @@ flowchart TD
    - Device B's local modifications are preserved as a brand new account record with a fresh UUID and label `(Restored from Deleted Copy)`.
    - The preserved copy is re-encrypted with fresh nonces and bound AAD, ensuring zero data loss and preventing future resurrection of the deleted ID.
 
-### 5.4 Device Revocation Boundaries & Key Rotation Protocol
-- **Revocation Boundary:** Deleting a record from `devices` table purges sync query authorization, but does **not** cryptographically erase the Vault Key from hardware in an adversary's physical possession.
-- **Vault Key Rotation ($K_v \to K_v'$):** Implemented in `VaultService.rotateVaultKey`. Evicting a compromised device requires generating a new 256-bit key $K_v'$, re-encrypting all active accounts under $K_v'$ locally, updating passphrase and recovery wrappers, pushing updates via atomic CAS, and re-binding local Keystore.
+### 5.4 Device Revocation Boundaries & Two-Phase Vault Key Rotation
+- **Revocation Boundary:** Deleting a record from the `devices` table purges sync query authorization, but does **not** cryptographically erase the Vault Key from hardware in an adversary's physical possession.
+- **Two-Phase Vault Key Rotation Protocol ($K_v \to K_v'$):** Implemented in `VaultService.rotateVaultKey`. Evicting a compromised device requires generating a new 256-bit symmetric key $K_v'$ and executing a two-phase protocol with on-disk state tracking (`nyx_rotation_manifest_v1.json`):
+  1. *Pre-flight Verification:* Calls `LocalVaultStorage.loadAccounts(oldVaultKey)` to verify active key decrypts local data.
+  2. *Phase 1 (`PREPARED`):* Decrypts accounts in RAM, re-encrypts under $K_v'$ with fresh nonces and bound AAD, wraps $K_v'$ with Argon2id, and writes manifest to disk.
+  3. *Phase 2 (`CLOUD_COMMITTED`):* Updates cloud envelope and pushes re-encrypted accounts via CAS; transitions manifest to `CLOUD_COMMITTED`.
+  4. *Local Commit (`COMPLETED`):* Commits $K_v'$ to Android Keystore, commits local storage, verifies decryption, and purges manifest.
+  5. *Startup Crash Recovery:* `recoverInterruptedRotation` detects interrupted rotations on reboot, committing $K_v'$ if cloud succeeded (`CLOUD_COMMITTED`) or safely discarding manifest if interrupted during `PREPARED`.
 
-### 5.5 Crash-Safe Offline Mutation Queue (Write-Ahead Journaling)
+### 5.5 Crash-Safe Offline Mutation Queue (Write-Ahead Journaling & Integrity)
 Offline mutations are managed via `PersistentMutationQueue` (`frontend/src/services/queueService.ts`):
-- **WAL Journaling:** Mutations are written to disk (`nyx_mutation_queue_v1.journal`) using atomic temporary write + rename before remote dispatch.
+- **Concurrency Serialization Mutex (`runExclusive`):** All async queue operations are serialized through an internal lock to eliminate concurrent read-modify-write race conditions and lost mutations.
+- **Journal Envelope & SHA-256 Checksums:** Journal file (`nyx_mutation_queue_v1.journal`) stores a versioned envelope (`schemaVersion: 1`, `checksum`, `updatedAt`) protecting against partial writes or truncation.
+- **Backup Rotation & Auto-Repair:** On every write, the prior journal is rotated to `nyx_mutation_queue_v1.journal.bak`. If the primary journal is corrupted, the queue automatically recovers from `.bak` and repairs primary. Corrupted journals that cannot be parsed are archived to `nyx_mutation_queue_v1.journal.corrupted.<timestamp>`.
+- **WAL Journaling:** Mutations are written to disk using atomic temporary write + rename before remote dispatch.
 - **State Machine:** `ENQUEUED` -> `PROCESSING` -> `ACKNOWLEDGED` (or `RETRYING` with jittered backoff, or `PERMANENTLY_FAILED`).
 - **Startup Crash Recovery:** Detects mutations interrupted in `PROCESSING` state during application kill or power failure, queries the server to determine whether remote write completed, and acknowledges or resets to `ENQUEUED`.
 - **Deduplication:** Folds multiple offline updates for the same account to prevent queue bloat.

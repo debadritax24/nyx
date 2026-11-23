@@ -107,9 +107,9 @@ nyx/
    ```
 
 2. Configure environment:
-   Fill in `.env` with your Supabase credentials:
+   Fill in `.env` in the repository root with your Supabase credentials:
    ```bash
-   cp .env.example .env # or edit .env directly
+   # edit root .env directly with your project URL and keys
    ```
 
 3. Install frontend dependencies:
@@ -140,17 +140,17 @@ nyx/
   ```
 - Run crypto & TOTP vector tests:
   ```bash
-  cd frontend && npm test -- src/core/totp/__tests__
+  cd frontend && npm test -- tests/core/totp/rfc6238.test.ts
   ```
-- Run backend RLS tests:
+- Run backend security & integration tests:
   ```bash
-  cd backend && supabase test db
+  cd backend && npm test
   ```
 
 ---
 
 ## Project Status
 
-- **Current Milestone:** Phase 0 & Phase 1 Foundation Active.
-- Repository structure, strict documentation, database migrations, and frontend baseline configured.
+- **Current Milestone:** Phase 8 Completed — Beta Release Gate (`CONDITIONALLY READY`).
+- Architecture, cryptography, zero-knowledge invariants, atomic CAS concurrency, offline queue durability (with serialization mutex & backup recovery), and two-phase vault rotation verified (87 frontend tests passing, 17 backend security suites passing).
 - See [memory.md](file:///home/tushardevx01/Documents/nyx/memory.md) and [ROADMAP.md](file:///home/tushardevx01/Documents/nyx/ROADMAP.md) for live progress.

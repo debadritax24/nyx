@@ -124,3 +124,58 @@ Applies forward-only migrations sequentially to the live Supabase project using 
 ```bash
 node backend/scripts/apply_remote_migrations.js
 ```
+
+---
+
+## 6. EAS Cloud Build & Project Authorization
+
+NYX is configured with EAS project ID `0a58fd2d-3c2f-485d-8dd9-44b3ebc38a11` in `frontend/app.json`.
+
+### 6.1 Entity Authorization (403 Forbidden)
+If running `eas build` or `eas project:info` yields `Entity Not Authorized (403 Forbidden)`:
+- Cause: The currently authenticated Expo account (`eas whoami`) does not have owner or collaborator permissions on the configured EAS project ID.
+- Resolution Options:
+  1. **Grant Permission:** Add the current Expo account as a collaborator in the expo.dev project dashboard.
+  2. **Re-link Project (User Authorized Only):** With explicit developer authorization, re-link to an Expo project owned by the current account:
+     ```bash
+     cd frontend
+     eas init
+     ```
+
+### 6.2 Local Standalone APK / AAB Build (Without Cloud EAS)
+To build standalone release binaries locally using Android Studio or Gradle:
+```bash
+cd frontend
+npx expo prebuild --platform android
+cd android
+./gradlew assembleRelease # generates release APK
+./gradlew bundleRelease   # generates release AAB
+```
+
+---
+
+## 7. Beta Release Gate Validation Runbook
+
+Before promoting NYX from `CONDITIONALLY READY` to `VERIFIED BETA`:
+
+1. **Physical Device Connection:**
+   Connect a physical Android 14+ device via USB debugging and verify:
+   ```bash
+   adb devices
+   ```
+2. **Hardware Keystore & Biometric Invalidation Test:**
+   - Install release APK: `adb install frontend/android/app/build/outputs/apk/release/app-release.apk`.
+   - Setup vault with Master Passphrase and biometrics.
+   - Lock vault and verify biometric unlock succeeds.
+   - Go to Android OS Settings -> Security -> Add a new fingerprint.
+   - Reopen NYX: verify that the application detects biometric enrollment change and prompts for Master Passphrase re-authentication.
+3. **Offline Mutation Queue Crash Test:**
+   - Put device in Airplane Mode.
+   - Create 3 new TOTP accounts and edit 1 account.
+   - Kill app process forcefully: `adb shell am force-stop com.anonymous.nyx`.
+   - Reopen app: verify all 4 mutations remain queued in journal (`nyx_mutation_queue_v1.journal`).
+   - Re-enable network: verify all mutations sync cleanly with atomic CAS.
+4. **Two-Phase Key Rotation Test:**
+   - Trigger Vault Key Rotation.
+   - Force-kill app immediately upon cloud commit.
+   - Reopen app: verify `recoverInterruptedRotation` detects `CLOUD_COMMITTED`, saves $K_v'$ to Keystore, and unlocks cleanly without lockout.

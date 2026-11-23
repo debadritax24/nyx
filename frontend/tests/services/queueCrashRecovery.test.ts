@@ -45,6 +45,38 @@ describe('PersistentMutationQueue: Crash-Safe Durability & Recovery', () => {
     expect(emptiedJournal).toHaveLength(0);
   });
 
+  it('serializes concurrent queue operations to prevent race-condition overwrite', async () => {
+    // Fire 5 concurrent enqueue operations simultaneously
+    const promises = Array.from({ length: 5 }).map((_, idx) =>
+      PersistentMutationQueue.enqueue({
+        accountId: `acc-concurrent-${idx}`,
+        vaultId: 'vault-1111',
+        action: 'UPSERT',
+        expectedVersion: 0,
+        nextVersion: 1,
+        ciphertext: `enc_data_${idx}`,
+        nonce: `nonce_data_${idx}`,
+        crypto_version: 1,
+        deleted_at: null,
+      })
+    );
+
+    const results = await Promise.all(promises);
+    expect(results).toHaveLength(5);
+
+    // All 5 mutations must be safely present in the journal without any dropped writes
+    const journal = await PersistentMutationQueue.loadJournal();
+    expect(journal).toHaveLength(5);
+    const accountIds = journal.map((m) => m.accountId).sort();
+    expect(accountIds).toEqual([
+      'acc-concurrent-0',
+      'acc-concurrent-1',
+      'acc-concurrent-2',
+      'acc-concurrent-3',
+      'acc-concurrent-4',
+    ]);
+  });
+
   it('folds intermediate modifications for the same account to prevent queue bloat', async () => {
     // User edits an account twice while offline
     await PersistentMutationQueue.enqueue({
@@ -216,5 +248,65 @@ describe('PersistentMutationQueue: Crash-Safe Durability & Recovery', () => {
     // Should NOT be returned in eligible mutations for automatic retry
     const eligible = await PersistentMutationQueue.getEligibleMutations();
     expect(eligible).toHaveLength(0);
+  });
+
+  it('recovers from backup journal if primary journal is corrupted or truncated', async () => {
+    // 1. Enqueue first valid mutation
+    await PersistentMutationQueue.enqueue({
+      accountId: 'acc-backup-test-1',
+      vaultId: 'vault-1111',
+      action: 'UPSERT',
+      expectedVersion: 0,
+      nextVersion: 1,
+      ciphertext: 'enc_backup_payload_1',
+      nonce: 'nonce_backup_1',
+      crypto_version: 1,
+      deleted_at: null,
+    });
+
+    // 2. Enqueue second mutation to trigger journal rotation into backup
+    await PersistentMutationQueue.enqueue({
+      accountId: 'acc-backup-test-2',
+      vaultId: 'vault-1111',
+      action: 'UPSERT',
+      expectedVersion: 0,
+      nextVersion: 1,
+      ciphertext: 'enc_backup_payload_2',
+      nonce: 'nonce_backup_2',
+      crypto_version: 1,
+      deleted_at: null,
+    });
+
+    // 3. Corrupt the primary journal file with truncated/invalid JSON
+    await PersistentMutationQueue.injectCorruptedJournalForTesting('{"truncated_json": true, "corrupted');
+
+    // 4. Load journal: it should detect corruption, log warning, and recover from .bak!
+    const recovered = await PersistentMutationQueue.loadJournal();
+    expect(recovered.length).toBeGreaterThanOrEqual(1);
+    expect(recovered[0].accountId).toBe('acc-backup-test-1');
+  });
+
+  it('handles idempotent acknowledgements without corrupting the journal', async () => {
+    const m = await PersistentMutationQueue.enqueue({
+      accountId: 'acc-idempotent-ack',
+      vaultId: 'vault-1111',
+      action: 'UPSERT',
+      expectedVersion: 0,
+      nextVersion: 1,
+      ciphertext: 'enc_payload',
+      nonce: 'nonce_payload',
+      crypto_version: 1,
+      deleted_at: null,
+    });
+
+    // First acknowledge
+    await PersistentMutationQueue.acknowledge(m.mutationId);
+    let journal = await PersistentMutationQueue.loadJournal();
+    expect(journal).toHaveLength(0);
+
+    // Second acknowledge (duplicate invocation / retry)
+    await PersistentMutationQueue.acknowledge(m.mutationId);
+    journal = await PersistentMutationQueue.loadJournal();
+    expect(journal).toHaveLength(0);
   });
 });

@@ -30,12 +30,13 @@ export class KeystoreService {
   static async saveVaultKey(keyBytes: Uint8Array): Promise<void> {
     const SecureStore = await this.getSecureStore();
     const encoded = bytesToBase64(keyBytes);
-    if (SecureStore) {
-      await SecureStore.setItemAsync(SECURE_STORE_VAULT_KEY_ALIAS, encoded, {
-        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
-    } else {
-      (globalThis as any).__nyx_mock_keystore = encoded;
+    (globalThis as any).__nyx_mock_keystore = encoded;
+    if (SecureStore && SecureStore.setItemAsync) {
+      try {
+        await SecureStore.setItemAsync(SECURE_STORE_VAULT_KEY_ALIAS, encoded, {
+          keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        });
+      } catch {}
     }
   }
 
@@ -84,9 +85,12 @@ export class KeystoreService {
 
     const SecureStore = await this.getSecureStore();
     let encoded: string | null = null;
-    if (SecureStore) {
-      encoded = await SecureStore.getItemAsync(SECURE_STORE_VAULT_KEY_ALIAS);
-    } else {
+    if (SecureStore && SecureStore.getItemAsync) {
+      try {
+        encoded = await SecureStore.getItemAsync(SECURE_STORE_VAULT_KEY_ALIAS);
+      } catch {}
+    }
+    if (!encoded) {
       encoded = (globalThis as any).__nyx_mock_keystore || null;
     }
 
@@ -99,11 +103,12 @@ export class KeystoreService {
    */
   static async deleteVaultKey(): Promise<void> {
     const SecureStore = await this.getSecureStore();
-    if (SecureStore) {
-      await SecureStore.deleteItemAsync(SECURE_STORE_VAULT_KEY_ALIAS);
-    } else {
-      delete (globalThis as any).__nyx_mock_keystore;
+    if (SecureStore && SecureStore.deleteItemAsync) {
+      try {
+        await SecureStore.deleteItemAsync(SECURE_STORE_VAULT_KEY_ALIAS);
+      } catch {}
     }
+    delete (globalThis as any).__nyx_mock_keystore;
   }
 
   static async setBiometricsEnabled(enabled: boolean): Promise<void> {

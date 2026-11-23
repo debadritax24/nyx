@@ -2,8 +2,8 @@
 
 ## 1. Project Overview & Current Phase
 - **Project:** NYX Authenticator (Android-first offline, client-side encrypted TOTP vault)
-- **Active Development Phase:** Phase 6 (Production Hardening, Security Validation & Android Release Readiness) Completed.
-- **Current Milestone:** Milestone 2.0 (Production Release Candidate verified against live Supabase cloud, atomic Compare-And-Swap concurrency, Delete-vs-Update zero data loss preservation, Maestro E2E test flows, performance scaling benchmarks, and EAS production release profiles).
+- **Active Development Phase:** Phase 8 (Final Android Validation, Recovery Assurance & Beta Release Gate) Completed.
+- **Current Milestone:** Milestone 2.1 (Beta Release Gate complete: hardened queue mutex serialization, journal integrity checksums & backup auto-repair, crash-recoverable two-phase vault key rotation manifest, 87 passing frontend tests, 17 backend security suites, and independent release readiness audit).
 
 ---
 
@@ -46,6 +46,18 @@ An independent audit was conducted across cryptography, database RLS, and fronte
 12. **[SEC-012 - Medium] Sensitive Clipboard Leaks & Unnecessary Audio Permission:**
     - *Finding:* Copied OTP codes remained on system clipboard indefinitely; `expo-camera` plugin injected `RECORD_AUDIO` permission.
     - *Remediation:* Configured automatic clipboard auto-purging after 30 seconds; explicitly blocked `android.permission.RECORD_AUDIO` in `app.json`.
+13. **[SEC-013 - High] Concurrent Queue Race Conditions & Lost Mutations:**
+    - *Finding:* Asynchronous operations against the offline mutation journal (`nyx_mutation_queue_v1.journal`) could interleave read-modify-write sequences without mutual exclusion, resulting in lost mutations during rapid concurrent enqueues or status transitions.
+    - *Remediation:* Implemented an internal async serialization mutex (`runExclusive`) in `PersistentMutationQueue`, serializing all journal modifications. Verified by concurrency stress tests.
+14. **[SEC-014 - High] Queue Journal Truncation & Silent Loss on Parse Errors:**
+    - *Finding:* The queue journal previously lacked integrity checksums; parsing failures silently caught exceptions and defaulted to empty arrays, causing unrecoverable data loss upon partial disk writes.
+    - *Remediation:* Implemented `QueueJournalEnvelope` (`schemaVersion: 1`, SHA-256 `checksum`, `updatedAt`), automated backup journal rotation (`nyx_mutation_queue_v1.journal.bak`), automatic recovery repairing primary journals from backup, and archiving corrupted journals to `nyx_mutation_queue_v1.journal.corrupted.<timestamp>`.
+15. **[SEC-015 - Critical] Non-Atomic Vault Key Rotation Lockout Risk:**
+    - *Finding:* In Phase 7, if the application crashed after pushing re-encrypted accounts to Supabase but before updating the local Keystore with $K_v'$, the user was permanently locked out: local Keystore possessed $K_v$ while cloud held accounts encrypted under $K_v'$.
+    - *Remediation:* Replaced single-step rotation with a two-phase protocol tracked via an on-disk manifest (`nyx_rotation_manifest_v1.json`) with stages `PREPARED`, `CLOUD_COMMITTED`, and `COMPLETED`. Implemented pre-flight decryption verification and startup recovery (`recoverInterruptedRotation`), guaranteeing that if an app crashes post-cloud-commit, $K_v'$ is recovered and committed locally on next boot.
+16. **[SEC-016 - Medium] EAS Project ID Authorization Collision:**
+    - *Finding:* EAS project ID `0a58fd2d-3c2f-485d-8dd9-44b3ebc38a11` returns 403 Forbidden for the active developer account `tushardevx01` (`thetushardev0@gmail.com`).
+    - *Remediation:* Documented EAS entity authorization status and runbook in `DEVELOPMENT.md`. Retained project ID per repository invariants without unauthorized overwriting.
 
 ---
 
@@ -86,7 +98,7 @@ nyx/
 ---
 
 ## 5. Test Suite Verification Summary
-- **Frontend Test Suite:** 12 test suites, 82 tests passing (0 failures).
+- **Frontend Test Suite:** 12 test suites, 87 tests passing (0 failures).
   - `tests/core/totp/rfc6238.test.ts`: Official RFC 6238 vectors (SHA1, SHA256, SHA512), 6-digit & 8-digit codes, leading zeros.
   - `tests/core/totp/base32.test.ts`: Strict RFC 4648 Base32 validation and decoding.
   - `tests/core/totp/uri.test.ts`: Parsing and canonical serialization of `otpauth://` URIs.
@@ -96,8 +108,8 @@ nyx/
   - `tests/core/crypto/storage.test.ts`: Encrypted local persistence, corruption handling, and atomic writes.
   - `tests/services/syncService.test.ts`: AES-256-GCM cloud encryption, AAD validation, deterministic conflict reconciliation (preserving forked copies), tombstone anti-resurrection, delete-vs-update zero data loss, and multi-device bidirectional synchronization simulation.
   - `tests/services/deviceService.test.ts`: Persistent UUID generation and device label management.
-  - `tests/services/queueCrashRecovery.test.ts`: Crash-safe persistent WAL queue, 5-stage state machine, process crash recovery during active upload, remote write status reconciliation, and bounded exponential backoff with jitter.
-  - `tests/services/keyRotation.test.ts`: Master Vault Key Rotation ($K_v \to K_v'$), re-encryption of accounts with fresh nonces, Argon2id re-wrapping, transactional cloud envelope update, and local Keystore re-binding.
+  - `tests/services/queueCrashRecovery.test.ts`: Crash-safe persistent WAL queue, 5-stage state machine, process crash recovery during active upload, remote write status reconciliation, bounded exponential backoff with jitter, async mutex serialization (`runExclusive`), journal schema versioning with SHA-256 checksums, automatic backup journal (`.bak`) recovery, and corrupted journal archiving.
+  - `tests/services/keyRotation.test.ts`: Two-phase Master Vault Key Rotation ($K_v \to K_v'$), pre-flight decryption verification, re-encryption of accounts with fresh nonces, Argon2id re-wrapping, on-disk rotation manifest lifecycle (`PREPARED` -> `CLOUD_COMMITTED` -> `COMPLETED`), transactional cloud envelope update, startup crash recovery (`recoverInterruptedRotation`), and local Keystore re-binding.
   - `tests/performance.test.ts`: 100 & 500 account TOTP calculation latency (< 0.25ms/code), 500-account vault encryption/decryption scaling, 64MB Argon2id profiling, and reconciler scalability.
 - **Backend Test Suite:** 7 security assertion suites passing.
   - RLS unconditionally enabled and forced across `profiles`, `vaults`, `authenticator_accounts`, and `devices`.

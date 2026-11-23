@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+### Final Android Validation, Recovery Assurance & Beta Release Gate (Phase 8)
+- **Queue Mutex & Concurrency Serialization:** Hardened `PersistentMutationQueue` with an async serialization mutex (`runExclusive`), eliminating race conditions during concurrent enqueue, processing, and acknowledgement operations.
+- **Journal Integrity Checksumming & Backup Recovery:** Added schema versioning (`schemaVersion: 1`) and integrity checksums to `PersistentMutationQueue`. Implemented automatic failover recovery from `nyx_mutation_queue_v1.journal.bak` upon detecting truncated or corrupted journal files, preventing data loss.
+- **Recoverable Two-Phase Vault Key Rotation:** Refactored `VaultService.rotateVaultKey` into a fault-tolerant two-phase protocol with on-disk stage tracking (`nyx_rotation_manifest_v1.json`). Implemented `recoverInterruptedRotation` to detect and safely resolve interrupted rotations across application crashes and power failures.
+- **Pre-flight Vault Decryption Guards:** Added pre-flight validation in `rotateVaultKey` verifying that the current key can successfully decrypt local storage prior to initiating rotation.
+- **Automatic Startup Recovery Hook:** Hooked `recoverInterruptedRotation` into `loadFromLocalKeystore`, ensuring interrupted rotations are resolved on app launch before reading Keystore state.
+- **Failure Injection Test Coverage:** Expanded test suites to 87 passing tests across 12 test suites, verifying crash recovery during active uploads, concurrent queue mutations, journal corruption failover, and rotation interruptions across all stages.
+- **EAS Authorization & Hardware Keystore Gatekeeping:** Formally documented EAS project access boundaries and categorized physical hardware biometric invalidation as `NOT TESTED` pending physical device availability.
+
 ### Android Device Validation, Crash-Safe Sync & Release Candidate Audit (Phase 7)
 - **Safe Concurrent CAS & Race Mitigation (Migration 4):** Authored and applied `20261123000004_safe_concurrent_cas.sql` to live Supabase. Hardened `sync_push_account` with sub-transaction `unique_violation` error trapping and row re-locking, converting missing-row concurrent creation races into catchable `23514` CAS concurrency conflicts.
 - **Cross-Vault & Tombstone Resurrection Guards:** Added database guards in `sync_push_account` preventing unauthorized cross-vault account mutations and accidental resurrection of soft-deleted tombstones.

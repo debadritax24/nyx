@@ -92,22 +92,26 @@ const { data, error } = await supabase.rpc('sync_push_account', {
   - If record is soft-deleted and client attempts stale update, raises SQLSTATE `23514` (`Concurrency conflict: Account ... is soft-deleted`).
   - Client retrieves current remote row and invokes deterministic reconciliation.
 
-### 3.2 Persistent Mutation Queue (WAL)
+### 3.2 Persistent Mutation Queue (WAL & Integrity)
 Managed by `PersistentMutationQueue` (`frontend/src/services/queueService.ts`):
-- `enqueue(mutation)`: Atomically appends mutation to `nyx_mutation_queue_v1.journal`.
-- `loadJournal()`: Reads all pending/processing/retrying mutations from disk.
+- `runExclusive(action)`: Internal async serialization mutex ensuring concurrent mutations never interleave or corrupt disk state.
+- `enqueue(mutation)`: Atomically appends mutation to `nyx_mutation_queue_v1.journal` with SHA-256 integrity checksum and versioned envelope (`schemaVersion: 1`).
+- `loadJournal()`: Reads mutations from disk; if primary journal is corrupt, recovers automatically from `nyx_mutation_queue_v1.journal.bak`.
 - `markProcessing(mutationId)`: Sets state to `PROCESSING` before network dispatch.
 - `acknowledge(mutationId)`: Purges acknowledged mutation from disk.
 - `recordFailure(mutationId, errorMsg, isPermanent)`: Bounded backoff ($500\text{ms} \times 2^{\text{retry}} + \text{jitter}$) or marks `PERMANENTLY_FAILED`.
 - `recoverInterruptedMutations(checkRemoteCallback)`: Startup crash-recovery reconciling incomplete uploads.
 
-### 3.3 Master Vault Key Rotation
-Managed by `VaultService.rotateVaultKey` (`frontend/src/services/vaultService.ts`):
+### 3.3 Two-Phase Master Vault Key Rotation
+Managed by `VaultService.rotateVaultKey` and `VaultService.recoverInterruptedRotation` (`frontend/src/services/vaultService.ts`):
+- Pre-flight check: Verifies active key can decrypt local accounts before proceeding.
 - Generates new 256-bit symmetric vault key $K_v'$.
 - Re-encrypts all local accounts with fresh 96-bit nonces and bound AAD.
 - Wraps $K_v'$ under passphrase and recovery code via Argon2id.
-- Updates Supabase `vaults` row and pushes re-encrypted accounts via atomic CAS.
-- Updates Android Keystore with $K_v'$.
+- Persists `nyx_rotation_manifest_v1.json` at stage `PREPARED`.
+- Updates Supabase `vaults` row and pushes re-encrypted accounts via atomic CAS; advances manifest to `CLOUD_COMMITTED`.
+- Updates Android Keystore with $K_v'$, commits local storage, verifies decryption, and purges manifest (`COMPLETED`).
+- On app launch, `recoverInterruptedRotation` recovers and commits $K_v'$ if the app crashed in `CLOUD_COMMITTED`, preventing user lockout.
 
 ### 3.4 Pull Modified Accounts
 Retrieves encrypted records updated since the client's last synchronization timestamp.

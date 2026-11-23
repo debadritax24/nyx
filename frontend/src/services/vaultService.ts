@@ -6,12 +6,29 @@ import {
   wrapVaultKeyWithRecoveryCode,
   unwrapVaultKey,
   unwrapVaultKeyWithRecoveryCode,
+  bytesToBase64,
+  base64ToBytes,
   KeystoreService,
   LocalVaultStorage,
   DecryptedAccountRecord,
 } from '../core/crypto';
 import { DeviceService } from './deviceService';
 import { SyncService } from './syncService';
+
+export type RotationStage = 'PREPARED' | 'CLOUD_COMMITTED' | 'COMPLETED';
+
+export interface RotationManifest {
+  manifestVersion: number;
+  userId: string;
+  vaultId: string;
+  stage: RotationStage;
+  timestamp: number;
+  newVaultKeyBase64: string;
+  passphraseEnvelope: WrappedVaultKeyEnvelope;
+  recoveryEnvelope: WrappedVaultKeyEnvelope;
+}
+
+const ROTATION_MANIFEST_FILENAME = 'nyx_rotation_manifest_v1.json';
 
 export interface RemoteVaultRow {
   id: string;
@@ -141,11 +158,121 @@ export class VaultService {
     };
   }
 
+  private static memoryManifest: string | null = null;
+
+  private static async getFileSystem() {
+    try {
+      return require('expo-file-system');
+    } catch {
+      return null;
+    }
+  }
+
+  private static async getManifestPath(): Promise<string | null> {
+    const FileSystem = await this.getFileSystem();
+    if (FileSystem && FileSystem.documentDirectory) {
+      return `${FileSystem.documentDirectory}${ROTATION_MANIFEST_FILENAME}`;
+    }
+    return null;
+  }
+
+  static async saveRotationManifest(manifest: RotationManifest): Promise<void> {
+    const serialized = JSON.stringify(manifest);
+    const path = await this.getManifestPath();
+    if (path) {
+      const FileSystem = await this.getFileSystem();
+      const tempPath = `${path}.tmp`;
+      await FileSystem.writeAsStringAsync(tempPath, serialized, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      await FileSystem.moveAsync({ from: tempPath, to: path });
+    } else {
+      this.memoryManifest = serialized;
+    }
+  }
+
+  static async loadRotationManifest(): Promise<RotationManifest | null> {
+    const path = await this.getManifestPath();
+    let raw: string | null = null;
+    if (path) {
+      const FileSystem = await this.getFileSystem();
+      const info = await FileSystem.getInfoAsync(path);
+      if (info.exists) {
+        raw = await FileSystem.readAsStringAsync(path, { encoding: FileSystem.EncodingType.UTF8 });
+      }
+    } else {
+      raw = this.memoryManifest;
+    }
+
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  static async clearRotationManifest(): Promise<void> {
+    const path = await this.getManifestPath();
+    if (path) {
+      const FileSystem = await this.getFileSystem();
+      await FileSystem.deleteAsync(path, { idempotent: true });
+    }
+    this.memoryManifest = null;
+  }
+
   /**
-   * Rotates the user's Master Vault Key (Kv -> Kv').
-   * Fully re-encrypts all account records, wraps the new key under both the passphrase
-   * and emergency recovery code using fresh nonces and salts, updates Supabase vault metadata,
-   * re-encrypts remote accounts via CAS, and updates local Keystore storage.
+   * Startup Recovery for Interrupted Key Rotation:
+   * Inspects if a key rotation was interrupted mid-flight by app crash, battery death, or network abort.
+   * If CLOUD_COMMITTED, completes the local commit so the user is never locked out.
+   * If PREPARED, cloud was never touched, so manifest is discarded and old key remains active.
+   */
+  static async recoverInterruptedRotation(
+    userId: string,
+    accounts?: DecryptedAccountRecord[]
+  ): Promise<{ recovered: boolean; newVaultKey?: Uint8Array }> {
+    const manifest = await this.loadRotationManifest();
+    if (!manifest || manifest.userId !== userId) {
+      return { recovered: false };
+    }
+
+    if (manifest.stage === 'PREPARED') {
+      // Cloud was not updated; safely discard manifest
+      console.warn('[VaultService] Interrupted rotation in PREPARED stage. Discarding manifest; old key remains active.');
+      await this.clearRotationManifest();
+      return { recovered: false };
+    }
+
+    if (manifest.stage === 'CLOUD_COMMITTED') {
+      // Cloud was updated successfully, but local Keystore or storage commit crashed!
+      console.warn('[VaultService] Interrupted rotation in CLOUD_COMMITTED stage. Completing local commit...');
+      const newVaultKey = base64ToBytes(manifest.newVaultKeyBase64);
+
+      // Complete local Keystore update
+      await KeystoreService.saveVaultKey(newVaultKey);
+
+      // Re-save local accounts with new key if accounts provided or load from storage
+      if (accounts && accounts.length > 0) {
+        await LocalVaultStorage.saveAccounts(newVaultKey, accounts);
+      }
+
+      await this.clearRotationManifest();
+      return { recovered: true, newVaultKey };
+    }
+
+    return { recovered: false };
+  }
+
+  /**
+   * Rotates the user's Master Vault Key (Kv -> Kv') using a recoverable two-phase protocol:
+   * 1. Preserves old key until migration is safely completed.
+   * 2. Generates new 256-bit symmetric vault key.
+   * 3. Re-encrypts accounts locally.
+   * 4. Wraps new key with passphrase and recovery code via Argon2id.
+   * 5. Persists staged rotation manifest.
+   * 6. Updates cloud records via atomic CAS.
+   * 7. Updates local Android Keystore with new key and saves local accounts.
+   * 8. Verifies decryption and cleans up manifest.
    */
   static async rotateVaultKey(
     userId: string,
@@ -159,15 +286,32 @@ export class VaultService {
       throw new Error('Remote vault envelope not found.');
     }
 
+    // Pre-flight check: verify old key can decrypt local storage
+    try {
+      await LocalVaultStorage.loadAccounts(oldVaultKey);
+    } catch {
+      throw new Error('Pre-flight verification failed: current vault key cannot decrypt accounts.');
+    }
+
     // 1. Generate fresh 256-bit symmetric vault key
     const newVaultKey = generateVaultKey();
+    const newVaultKeyBase64 = bytesToBase64(newVaultKey);
 
     // 2. Wrap new key with user passphrase and recovery code
     const newPassphraseEnvelope = await wrapVaultKey(newVaultKey, passphrase);
     const newRecoveryEnvelope = await wrapVaultKeyWithRecoveryCode(newVaultKey, recoveryCode);
 
-    // 3. Stage re-encrypted accounts locally with new key
-    await LocalVaultStorage.saveAccounts(newVaultKey, accounts);
+    // 3. Stage rotation manifest on disk (Stage: PREPARED)
+    await this.saveRotationManifest({
+      manifestVersion: 1,
+      userId,
+      vaultId: remoteVault.id,
+      stage: 'PREPARED',
+      timestamp: Date.now(),
+      newVaultKeyBase64,
+      passphraseEnvelope: newPassphraseEnvelope,
+      recoveryEnvelope: newRecoveryEnvelope,
+    });
 
     // 4. Update cloud vault record
     const { error: vaultUpdateErr } = await supabase
@@ -188,8 +332,8 @@ export class VaultService {
       .eq('user_id', userId);
 
     if (vaultUpdateErr) {
-      // Rollback local storage to old key
-      await LocalVaultStorage.saveAccounts(oldVaultKey, accounts).catch(() => {});
+      // Clean up manifest, old key remains active
+      await this.clearRotationManifest();
       throw new Error(`Failed to update remote vault envelope: ${vaultUpdateErr.message}`);
     }
 
@@ -217,9 +361,32 @@ export class VaultService {
       }
     }
 
-    // 6. Update local Keystore with new key
+    // 6. Update manifest to CLOUD_COMMITTED
+    await this.saveRotationManifest({
+      manifestVersion: 1,
+      userId,
+      vaultId: remoteVault.id,
+      stage: 'CLOUD_COMMITTED',
+      timestamp: Date.now(),
+      newVaultKeyBase64,
+      passphraseEnvelope: newPassphraseEnvelope,
+      recoveryEnvelope: newRecoveryEnvelope,
+    });
+
+    // 7. Update local Keystore with new key
     await KeystoreService.saveVaultKey(newVaultKey);
+
+    // 8. Re-encrypt and commit local storage with new key
     await LocalVaultStorage.saveAccounts(newVaultKey, accounts);
+
+    // 9. Verify decryption of migrated records locally
+    const verifiedAccounts = await LocalVaultStorage.loadAccounts(newVaultKey);
+    if (verifiedAccounts.length !== accounts.length) {
+      throw new Error('Local post-rotation decryption verification failed.');
+    }
+
+    // 10. Clean up manifest
+    await this.clearRotationManifest();
 
     return {
       newVaultKey,

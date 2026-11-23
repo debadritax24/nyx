@@ -87,9 +87,20 @@
 
 ---
 
-## Phase 8: Controlled Beta & Field Validation [ROADMAP]
+## Phase 8: Recovery Assurance & Beta Release Gate [COMPLETED]
+- [x] Hardened `PersistentMutationQueue` with concurrency mutex and integrity checksums.
+- [x] Implemented backup journal failover recovery for truncated/corrupted queue files.
+- [x] Delivered recoverable two-phase Vault Key Rotation with stage tracking manifest (`nyx_rotation_manifest_v1.json`).
+- [x] Implemented pre-flight decryption validation and startup rotation recovery (`recoverInterruptedRotation`).
+- [x] Verified full test suite expansion to 87 passing tests with comprehensive failure injection.
+- [x] Documented EAS ownership boundaries and established conditional release readiness criteria.
+
+---
+
+## Phase 9: Physical Field Validation & Store Release [ROADMAP]
 - [ ] Connect physical Android test devices via ADB to execute Maestro automated flows.
 - [ ] Test hardware TEE / StrongBox Keystore key invalidation upon new biometric enrollment.
+- [ ] Link active EAS project under authorized organization/user to generate preview APK.
 - [ ] Supabase Realtime channel subscription for instant multi-device change notifications.
 - [ ] Automated encrypted cloud backup exports to Google Drive / WebDAV.
 - [ ] Google Play Store and F-Droid automated deployment pipeline via GitHub Actions.

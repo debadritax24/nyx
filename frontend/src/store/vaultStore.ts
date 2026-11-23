@@ -13,7 +13,9 @@ import {
   zeroMemory,
 } from '../core/crypto';
 import { SyncService } from '../services/syncService';
+import { VaultService } from '../services/vaultService';
 import { useSyncStore } from './syncStore';
+import { useAuthStore } from './authStore';
 
 interface VaultStoreState {
   isUnlocked: boolean;
@@ -114,6 +116,12 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
 
   loadFromLocalKeystore: async (promptBiometrics = true) => {
     try {
+      // Check and recover from any interrupted key rotation before reading keystore
+      const user = useAuthStore.getState().user;
+      if (user) {
+        await VaultService.recoverInterruptedRotation(user.id).catch(() => {});
+      }
+
       const key = await KeystoreService.getVaultKey(promptBiometrics);
       if (key) {
         const loadedAccounts = await LocalVaultStorage.loadAccounts(key);

@@ -170,3 +170,4 @@ CREATE INDEX idx_devices_user_id ON devices(user_id);
    - Prevents cross-user account UUID collisions / hijacking (`42501 Forbidden`).
    - Guards soft-deleted tombstones against accidental resurrection with stale versions (`23514 Concurrency conflict`).
    - Verifies cross-vault integrity upon account updates.
+8. **Vault Key Rotation Interoperability:** During a two-phase Vault Key Rotation, client-side re-encrypted accounts are committed to `authenticator_accounts` using `sync_push_account` with incremented versions, guaranteeing that concurrent edits by secondary devices during rotation are caught by standard CAS conflict detection without data corruption.
