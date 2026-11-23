@@ -58,7 +58,54 @@ const { data, error } = await supabase
 
 ---
 
-## 3. Account Synchronization Operations
+## 3. Account Synchronization & Concurrency Operations
+
+### 3.1 Push Account Mutation via Atomic Compare-And-Swap (CAS)
+Pushes an account insertion, modification, or soft-deletion tombstone atomically using database-level Compare-And-Swap semantics with row-level locking (`FOR UPDATE`).
+
+```typescript
+const { data, error } = await supabase.rpc('sync_push_account', {
+  p_id: mutation.id,
+  p_vault_id: mutation.vault_id,
+  p_ciphertext: mutation.ciphertext,
+  p_nonce: mutation.nonce,
+  p_crypto_version: mutation.crypto_version,
+  p_expected_version: mutation.expectedVersion,
+  p_next_version: mutation.nextVersion,
+  p_deleted_at: mutation.deleted_at || null,
+});
+```
+
+- **Parameters:**
+  - `p_id` (UUID): Account identity.
+  - `p_vault_id` (UUID): Owning vault identity.
+  - `p_ciphertext` (TEXT): AES-256-GCM ciphertext of JSON account data.
+  - `p_nonce` (TEXT): Base64 96-bit random nonce.
+  - `p_crypto_version` (INTEGER): Format version (`1`).
+  - `p_expected_version` (INTEGER): The version observed prior to local edit (`0` for new insertions).
+  - `p_next_version` (INTEGER): Expected version + 1 (monotonically incrementing).
+  - `p_deleted_at` (TIMESTAMPTZ, optional): Tombstone soft-deletion timestamp.
+- **Error Handling:**
+  - If database version does not match `p_expected_version`, raises SQLSTATE `23514` with message `Concurrency conflict: Expected version X but found version Y`.
+  - Client retrieves current remote row and invokes deterministic reconciliation.
+
+### 3.2 Pull Modified Accounts
+Retrieves encrypted records updated since the client's last synchronization timestamp.
+```typescript
+let query = supabase
+  .from('authenticator_accounts')
+  .select('*')
+  .order('updated_at', { ascending: true });
+
+if (lastSyncedAt) {
+  query = query.gt('updated_at', lastSyncedAt);
+}
+const { data, error } = await query;
+```
+
+---
+
+## 4. Device Management Operations
 
 ### 3.1 Fetch Encrypted Accounts Since Last Sync
 Pulls remote updates for local decryption and reconciliation.

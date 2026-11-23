@@ -1,0 +1,26 @@
+appId: com.nyx.authenticator
+---
+- launchApp
+
+# Open Settings -> Secondary Device Enrollment / Recovery
+- tapOn:
+    id: "settings-button"
+- assertVisible: "Device Enrollment & Recovery"
+- tapOn: "Device Enrollment & Recovery"
+
+- assertVisible: "Secondary Device Enrollment"
+- tapOn: "24-Word Recovery Code"
+
+# Test rejection of invalid recovery mnemonic
+- tapOn: "Enter 24-word recovery code"
+- inputText: "abandon abandon abandon invalid word sequence"
+- hideKeyboard
+- tapOn: "Unwrap & Enroll Vault"
+- assertVisible: "Invalid recovery code"
+
+# Test Passphrase Tab
+- tapOn: "Master Passphrase"
+- tapOn: "Enter Master Passphrase"
+- inputText: "VaultSecretMasterPassphrase2026!"
+- hideKeyboard
+- tapOn: "Unwrap & Enroll Vault"

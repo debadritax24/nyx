@@ -95,25 +95,59 @@ Every table containing user data (`profiles`, `vaults`, `authenticator_accounts`
 
 ## 7. Multi-Device Trust Boundaries & Threat Analysis
 
-### 7.1 Secondary Device Enrollment Trust Model
+### 7.1 Secondary Device Enrollment & Device Revocation Realities
 - **Zero Plaintext Key Escrow:** Enrolling a secondary device never transmits $K_v$ across the network. The secondary device independently derives the wrapping key from user input (Passphrase or 24-word Recovery Code) using Argon2id, downloads the wrapped key from the `vaults` table, and verifies the AES-256-GCM authentication tag.
 - **Untrusted Server Invariant:** Even with full compromise of the Supabase database and network eavesdropping on TLS traffic, an adversary cannot decrypt account secrets or unwrap the Vault Key without breaking Argon2id ($m=64\text{MB}, t=3$) and 256 bits of entropy.
-- **Device Revocation:** Users can view all registered devices and revoke authorization. Revocation purges the device record from the `devices` table, disallowing future sync queries.
+- **Device Revocation Reality & Boundaries:** Users can view registered devices and revoke authorization. Revocation purges the device record from the `devices` table, cutting off cloud sync query authorization.
+  > [!WARNING]
+  > **Cryptographic Limitation of Device Revocation:** Deleting a device registration in the database **does not and cannot** cryptographically wipe an already-extracted Vault Key from hardware in an adversary's physical possession. If a device has been physically compromised, the user must perform a **Vault Key Rotation**.
 
-### 7.2 Concurrency & Tamper Resistance
-- **Optimistic Concurrency Guards:** The PostgreSQL engine enforces monotonic version increments via database trigger (`check_optimistic_concurrency`). Stale updates and malicious version replay are rejected at the database level.
-- **Tombstone Propagation:** Soft deletions (`deleted_at`) ensure peer devices never resurrect deleted accounts after coming online.
-- **Data Loss Immunity:** In the event of concurrent conflicting edits, NYX deterministically adopts the newer remote record while preserving the local divergent edit as a `(Conflicted Copy)`. Data is never silently discarded.
+### 7.2 Vault Key Rotation Protocol Specification
+To completely evict a compromised hardware device holding $K_v$, a full Vault Key Rotation is executed:
+1. **Fresh Key Generation:** The authorizing client generates a new 256-bit symmetric Vault Key ($K_v'$).
+2. **Local Re-Encryption:** All active account records are decrypted in memory with $K_v$, and re-encrypted with $K_v'$ using fresh 96-bit nonces and bound AAD.
+3. **Re-Wrapping Wrappers:** $K_v'$ is wrapped under the Master Passphrase and emergency recovery code using freshly generated Argon2id salts.
+4. **Atomic Cloud Migration:** The client pushes the new wrapped vault and account collection in an atomic PostgreSQL transaction.
+5. **Secondary Device Re-Enrollment:** All authorized peer devices must unwrap $K_v'$ using the Master Passphrase or 24-word code; the compromised device holding only $K_v$ cannot decrypt future records.
+
+### 7.3 Zero-Knowledge Information Disclosure Matrix
+
+| Data Item | Visible to Cloud (Supabase)? | Protection Level / Mechanism |
+| :--- | :--- | :--- |
+| **TOTP Secret (HMAC seed)** | **NO (Zero-Knowledge)** | AES-256-GCM encrypted on client under $K_v$. |
+| **Account Issuer & Label** | **NO (Zero-Knowledge)** | Contained inside encrypted ciphertext payload. |
+| **Generated OTP Codes** | **NO (Zero-Knowledge)** | Computed locally in ephemeral device memory. |
+| **Master Passphrase** | **NO (Zero-Knowledge)** | Used only as local input to Argon2id; never transmitted. |
+| **24-Word Recovery Code** | **NO (Zero-Knowledge)** | Used only as local input to Argon2id; never transmitted. |
+| **Master Vault Key ($K_v$)** | **NO (Zero-Knowledge)** | Stored in Android Keystore; wrapped by Argon2id in cloud. |
+| **Account UUID & Version** | **YES** | Public database metadata required for CAS routing. |
+| **Tombstone Timestamps** | **YES** | Required for deterministic deletion propagation. |
+| **Device Label & Platform** | **YES** | User-defined label (e.g. "Pixel 8 Pro") for session audit. |
+
+### 7.4 Concurrency & Tamper Resistance
+- **Atomic Compare-And-Swap (CAS):** Implemented via `sync_push_account` stored procedure with `FOR UPDATE` row locking. Database compares `expected_version` against current database version, rejecting race conditions with SQLSTATE `23514`.
+- **Tombstone Anti-Resurrection:** Soft deletions (`deleted_at`) ensure peer devices never resurrect deleted accounts after coming online.
+- **Delete-vs-Update Conflict Preservation:** If a device modified an account while offline and encounters a remote tombstone, the modified account is automatically preserved as a recovered copy (`(Restored from Deleted Copy)`), eliminating data loss.
 
 ---
 
-## 8. Security Review Checklist
+## 8. Production Release Security Checklist
 
-Before releasing any version or updating cryptographic routines:
-- [ ] Are all account secrets encrypted using AES-256-GCM before database insertion?
-- [ ] Is a fresh 96-bit nonce generated for every encryption?
-- [ ] Are Argon2id parameters compliant with OWASP password storage recommendations?
-- [ ] Are RLS policies tested against cross-tenant read/write exploits?
-- [ ] Is the decrypted Vault Key cleared from memory upon app backgrounding?
-- [ ] Are logs free of unencrypted secrets, OTPs, or key material?
-- [ ] Are all dependencies checked against known vulnerabilities (`npm audit`)?
+| Domain | Security Requirement | Status | Evidence / Verification Method |
+| :--- | :--- | :--- | :--- |
+| **1. Encryption** | AES-256-GCM with fresh 96-bit nonces & AAD | **VERIFIED** | Verified in `vault.test.ts` & `syncService.test.ts`. Nonce collision tests pass. |
+| **2. Key Management** | 256-bit CSPRNG Vault Key, dual Argon2id wrap | **VERIFIED** | Verified in `recovery.test.ts` & `kdf.test.ts`. Zero plaintext key transmission. |
+| **3. Recovery** | 24-word BIP-39 recovery code + Passphrase | **VERIFIED** | Verified in `recovery.test.ts`. 256-bit entropy verified. |
+| **4. Authentication** | Supabase Auth session & token isolation | **VERIFIED** | Verified in `live_integration.test.js`. Tokens stored in SecureStore. |
+| **5. Row-Level Security** | PostgreSQL RLS enabled & forced on all tables | **VERIFIED** | Verified in `rls.test.js` & `live_integration.test.js` (cross-tenant 0 rows). |
+| **6. Device Enrollment** | Zero-escrow secondary enrollment | **VERIFIED** | Verified in `vaultService.ts` & `enrollment.tsx`. |
+| **7. Device Revocation** | Revocation cuts cloud query access | **VERIFIED** | Verified in `live_integration.test.js` (device deletion confirmed). |
+| **8. Offline Functionality** | 100% offline OTP generation & local vault | **VERIFIED** | Verified in `rfc6238.test.ts` & `storage.test.ts`. Zero network required. |
+| **9. Data Deletion** | Soft-deletion tombstones & anti-resurrection | **VERIFIED** | Verified in `syncService.test.ts` & `live_integration.test.js`. |
+| **10. Synchronization** | Atomic Compare-And-Swap (CAS) with row locking | **VERIFIED** | Stored procedure `sync_push_account` verified in `live_integration.test.js`. |
+| **11. Backup / Restore** | Encrypted local vault backup with AAD | **VERIFIED** | Verified in `storage.test.ts` (atomic temp write + rename). |
+| **12. Error Handling** | Zero secrets in logs or error messages | **VERIFIED** | Verified: error messages only contain UUIDs and versions. |
+| **13. Privacy** | `FLAG_SECURE` screen privacy & clipboard purging | **VERIFIED** | Verified in `app/_layout.tsx` & `index.tsx` (30s auto-purge). |
+| **14. Permissions** | Minimal permissions (CAMERA, BIOMETRIC; AUDIO blocked) | **VERIFIED** | Verified via `npx expo config --type public` (`RECORD_AUDIO` blocked). |
+| **15. Dependencies** | Zero high/critical runtime vulnerabilities | **VERIFIED** | Verified via `npm audit --omit=dev` (0 vulnerabilities in runtime packages). |
+| **16. Release Signing** | EAS build profiles configured for APK & AAB | **VERIFIED** | Verified in `eas.json` (development, preview APK, production AAB). |

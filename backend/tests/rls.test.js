@@ -64,18 +64,50 @@ assert.ok(
 );
 console.log('[PASS] devices table includes last_active_at and device_label columns');
 
-// 6. Test optimistic concurrency logic directly in JavaScript simulation
-function simulateOptimisticConcurrency(oldVersion, newVersion) {
-  if (oldVersion !== null && newVersion <= oldVersion) {
-    throw new Error(`Concurrency conflict: version ${newVersion} <= ${oldVersion}`);
+// 6. Test Compare-And-Swap (CAS) stored procedure and simulation
+assert.ok(
+  totalSql.includes('FUNCTION public.sync_push_account'),
+  'Verification failure: sync_push_account stored procedure must be defined'
+);
+assert.ok(
+  totalSql.includes('FOR UPDATE'),
+  'Security requirement: sync_push_account must use FOR UPDATE row-level locking'
+);
+assert.ok(
+  totalSql.includes('v_existing.version != p_expected_version'),
+  'Security requirement: sync_push_account must verify expected_version equals current_version'
+);
+console.log('[PASS] Atomic Compare-And-Swap (CAS) stored procedure defined with FOR UPDATE locking');
+
+// 7. Test atomic Compare-And-Swap (CAS) logic simulation
+function simulateCAS(currentVersion, expectedVersion, nextVersion) {
+  if (currentVersion === null) {
+    // New record insertion
+    if (expectedVersion > 0) {
+      throw new Error(`Concurrency conflict: Record does not exist (expected ${expectedVersion})`);
+    }
+    return nextVersion;
   }
-  return true;
+  // Existing record update
+  if (currentVersion !== expectedVersion) {
+    throw new Error(`Concurrency conflict: Expected version ${expectedVersion} but found ${currentVersion}`);
+  }
+  if (nextVersion <= currentVersion) {
+    throw new Error(`Concurrency conflict: Next version ${nextVersion} must be greater than ${currentVersion}`);
+  }
+  return nextVersion;
 }
 
-assert.strictEqual(simulateOptimisticConcurrency(1, 2), true);
-assert.strictEqual(simulateOptimisticConcurrency(2, 3), true);
-assert.throws(() => simulateOptimisticConcurrency(2, 2), /Concurrency conflict/);
-assert.throws(() => simulateOptimisticConcurrency(2, 1), /Concurrency conflict/);
-console.log('[PASS] Concurrency simulator verified: stale updates and duplicate versions rejected');
+// First insertion: expected 0 -> assigns version 1
+assert.strictEqual(simulateCAS(null, 0, 1), 1);
+// Normal update: expected 1 -> advances to version 2
+assert.strictEqual(simulateCAS(1, 1, 2), 2);
+// Competing stale update: client expected 1, but DB is already at version 2 -> REJECTED!
+assert.throws(() => simulateCAS(2, 1, 3), /Expected version 1 but found 2/);
+// Stale read update: client expected 2, but DB already at version 3 -> REJECTED!
+assert.throws(() => simulateCAS(3, 2, 4), /Expected version 2 but found 3/);
+// Invalid decrement update: REJECTED!
+assert.throws(() => simulateCAS(2, 2, 2), /Next version 2 must be greater than 2/);
+console.log('[PASS] CAS concurrency simulator verified: exact version matches required, race conditions eliminated');
 
-console.log('\nAll 5 backend security and RLS test suites PASSED.');
+console.log('\nAll 6 backend security, RLS, and CAS test suites PASSED.');

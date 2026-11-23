@@ -1,0 +1,33 @@
+appId: com.nyx.authenticator
+---
+- launchApp
+- assertVisible: "NYX"
+
+# Check Vault Setup or Unlock
+- runFlow:
+    when:
+      visible: "Setup Encrypted Vault"
+    commands:
+      - assertVisible: "Master Passphrase"
+      - tapOn: "Master Passphrase"
+      - inputText: "VaultSecretMasterPassphrase2026!"
+      - hideKeyboard
+      - tapOn: "Initialize Vault"
+      - assertVisible: "Emergency Recovery Code"
+      - tapOn: "I Have Saved My Recovery Code"
+
+# Test Manual Vault Locking
+- tapOn:
+    id: "settings-button"
+- assertVisible: "Lock Vault Now"
+- tapOn: "Lock Vault Now"
+
+# Verify Lock Screen and Unlock
+- assertVisible: "Vault Locked"
+- tapOn: "Master Passphrase"
+- inputText: "VaultSecretMasterPassphrase2026!"
+- hideKeyboard
+- tapOn: "Unlock Vault"
+
+# Verify Vault unlocked and accounts visible
+- assertVisible: "NYX"

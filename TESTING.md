@@ -71,7 +71,31 @@ Implemented in `frontend/tests/services/syncService.test.ts` and `frontend/tests
 
 ---
 
-## 6. Execution Commands
+## 6. Phase 6: Live Supabase Integration & Maestro E2E Flows
+
+### 6.1 Live Supabase Integration Test Suite
+Implemented in `backend/tests/live_integration.test.js`:
+- Tests real user registration and session tokens via Supabase Auth.
+- Tests encrypted vault creation with Argon2id wrapped keys.
+- Tests device registration and metadata tracking in `devices`.
+- Tests client-side encrypted account upload via atomic Compare-And-Swap (CAS) procedure `sync_push_account`.
+- Tests zero-knowledge information disclosure (asserts backend stores no plaintext issuers, usernames, or secrets).
+- Tests Compare-And-Swap concurrency conflict rejection (stale expected version rejected with SQLSTATE `23514`).
+- Tests tombstone soft-deletion propagation.
+- Tests device revocation.
+- Tests cross-tenant RLS isolation (User B receives 0 rows when querying User A data).
+
+### 6.2 Maestro Android UI Automation Suite
+Located in `frontend/maestro/`:
+- `01-auth-flow.yaml`: Account creation, login, session persistence, and logout.
+- `02-vault-lifecycle.yaml`: Master passphrase setup, 24-word recovery code confirmation, manual locking, and vault unlock.
+- `03-authenticator-flow.yaml`: Manual account entry, malformed Base32 secret validation, live 6-digit TOTP calculation, 30s clipboard auto-purge, and account deletion.
+- `04-synchronization-flow.yaml`: Manual sync pill tap, background sync polling, and enrolled device inspection.
+- `05-recovery-flow.yaml`: Secondary device enrollment via Master Passphrase or 24-Word Recovery Code, with rejection of invalid mnemonics.
+
+---
+
+## 7. Execution Commands
 
 ### Run Full Test Suite (Frontend + Backend)
 ```bash

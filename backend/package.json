@@ -4,6 +4,6 @@
   "private": true,
   "description": "NYX Supabase backend tests and scripts",
   "scripts": {
-    "test": "node scripts/verify_schema.js && node tests/rls.test.js"
+    "test": "node scripts/verify_schema.js && node tests/rls.test.js && node tests/live_integration.test.js"
   }
 }

@@ -91,3 +91,30 @@ npm -v
    npx expo prebuild --platform android
    npx expo run:android
    ```
+
+---
+
+## 5. Verification & Test Execution
+
+### 5.1 Unit & Vector Tests
+```bash
+npm --prefix frontend test
+```
+
+### 5.2 Live Supabase Integration & CAS Concurrency Tests
+Executes registration, Argon2id vault creation, atomic Compare-And-Swap (CAS) conflict rejection, and tenant isolation against live Supabase cloud infrastructure:
+```bash
+npm --prefix backend test
+# or directly
+node backend/tests/live_integration.test.js
+```
+
+### 5.3 Maestro Android UI Automation Flows
+With an Android emulator running and Maestro installed (`curl -FsSL "https://get.maestro.mobile.dev" | bash`):
+```bash
+maestro test frontend/maestro/01-auth-flow.yaml
+maestro test frontend/maestro/02-vault-lifecycle.yaml
+maestro test frontend/maestro/03-authenticator-flow.yaml
+maestro test frontend/maestro/04-synchronization-flow.yaml
+maestro test frontend/maestro/05-recovery-flow.yaml
+```

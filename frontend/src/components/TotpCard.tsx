@@ -67,7 +67,9 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
             <TouchableOpacity
               onPress={() => onDelete(account.id)}
               style={styles.deleteBtn}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Delete ${account.issuer || 'account'} ${account.account_name}`}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
               <Text style={styles.deleteIcon}>×</Text>
             </TouchableOpacity>
@@ -78,6 +80,9 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
       <TouchableOpacity
         activeOpacity={0.7}
         onPress={() => onCopy && onCopy(code)}
+        accessibilityRole="button"
+        accessibilityLabel={`One time password for ${account.issuer || 'account'} ${account.account_name}: ${formattedCode}. Tap to copy.`}
+        testID="copy-otp-button"
         style={styles.codeContainer}
       >
         <Text style={[styles.codeText, remaining <= 5 && styles.codeUrgent]}>{formattedCode}</Text>

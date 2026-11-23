@@ -221,4 +221,123 @@ describe('Phase 5: Secure Cloud Synchronization & Concurrency Engine', () => {
       expect(reconcileOnA.merged[0].account_name).toBe('alice-renamed-on-b');
     });
   });
+
+  describe('Phase 6 Hardening: Delete vs Update Conflicts & Zero Data Loss', () => {
+    it('preserves local offline edits when remote was deleted (tombstoned)', () => {
+      // 1. Local device was offline and modified account
+      const localModified: DecryptedAccountRecord = {
+        ...mockAccount1,
+        account_name: 'alice-offline-work',
+        version: 1,
+      };
+
+      // 2. Remote device deleted the account (tombstone)
+      const remoteTombstone: DecryptedAccountRecord = {
+        ...mockAccount1,
+        version: 2,
+        deleted_at: new Date().toISOString(),
+      };
+
+      // Flag local ID as having a conflicting mutation
+      const conflictedIds = new Set([mockAccount1.id]);
+
+      const result = SyncService.reconcileAccounts([localModified], [remoteTombstone], conflictedIds);
+
+      // Invariant: Zero Data Loss.
+      // Canonical ID is deleted, but local edits are preserved under a new UUID with "(Restored from Deleted Copy)"
+      expect(result.conflictsResolved).toBe(1);
+      expect(result.merged).toHaveLength(1);
+      expect(result.merged[0].id).not.toBe(mockAccount1.id);
+      expect(result.merged[0].account_name).toBe('alice-offline-work (Restored from Deleted Copy)');
+      expect(result.merged[0].deleted_at).toBeNull();
+    });
+
+    it('ensures deleted records do not reappear on repeated synchronization', () => {
+      // 1. Initial sync resolved the delete-vs-update conflict
+      const localModified: DecryptedAccountRecord = {
+        ...mockAccount1,
+        account_name: 'alice-offline-work',
+        version: 1,
+      };
+      const remoteTombstone: DecryptedAccountRecord = {
+        ...mockAccount1,
+        version: 2,
+        deleted_at: new Date().toISOString(),
+      };
+      const conflictedIds = new Set([mockAccount1.id]);
+      const firstSync = SyncService.reconcileAccounts([localModified], [remoteTombstone], conflictedIds);
+      const restoredAccount = firstSync.merged[0];
+
+      // 2. Subsequent sync: remote tombstone arrives again during polling
+      // Local now holds [restoredAccount], remote has [remoteTombstone]
+      const secondSync = SyncService.reconcileAccounts([restoredAccount], [remoteTombstone]);
+
+      // Original deleted account must NOT reappear, and restored account must remain active
+      expect(secondSync.merged).toHaveLength(1);
+      expect(secondSync.merged[0].id).toBe(restoredAccount.id);
+      expect(secondSync.merged[0].account_name).toBe('alice-offline-work (Restored from Deleted Copy)');
+      expect(secondSync.conflictsResolved).toBe(0);
+    });
+  });
+
+  describe('Phase 6 Hardening: Forked Account Cryptographic Identity & AAD Integrity', () => {
+    it('strictly forbids reusing ciphertext under a different account identity (AAD mismatch)', async () => {
+      const originalAccount: DecryptedAccountRecord = {
+        ...mockAccount1,
+        id: '22222222-2222-4222-8222-222222222222',
+      };
+
+      // Encrypt under original account ID
+      const encrypted = await SyncService.encryptAccountForSync(vaultKeyA, originalAccount);
+
+      // Attacker attempts to forge or relocate ciphertext under a new account ID
+      const forkedRowWithReusedCiphertext: RemoteAccountRow = {
+        id: '33333333-3333-4333-8333-333333333333', // New forked ID
+        user_id: 'user-001',
+        vault_id: 'vault-001',
+        ciphertext: encrypted.ciphertext, // Copied old ciphertext
+        nonce: encrypted.nonce,
+        crypto_version: 1,
+        version: 1,
+        deleted_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      // GCM tag authentication must reject the relocated ciphertext because AAD is bound to the account ID
+      await expect(
+        SyncService.decryptRemoteAccount(vaultKeyB, forkedRowWithReusedCiphertext)
+      ).rejects.toThrow();
+    });
+
+    it('correctly re-encrypts forked accounts with fresh nonce and updated AAD', async () => {
+      const forkedAccount: DecryptedAccountRecord = {
+        ...mockAccount1,
+        id: '44444444-4444-4444-8444-444444444444',
+        account_name: 'alice (Conflicted Copy)',
+        version: 1,
+      };
+
+      // Properly re-encrypt using reencryptForkedAccount
+      const reencrypted = await SyncService.reencryptForkedAccount(vaultKeyA, forkedAccount);
+
+      const validForkedRow: RemoteAccountRow = {
+        id: forkedAccount.id,
+        user_id: 'user-001',
+        vault_id: 'vault-001',
+        ciphertext: reencrypted.ciphertext,
+        nonce: reencrypted.nonce,
+        crypto_version: 1,
+        version: 1,
+        deleted_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      // Decryption succeeds cleanly under the new UUID identity
+      const decrypted = await SyncService.decryptRemoteAccount(vaultKeyB, validForkedRow);
+      expect(decrypted.id).toBe(forkedAccount.id);
+      expect(decrypted.account_name).toBe('alice (Conflicted Copy)');
+    });
+  });
 });

@@ -169,19 +169,19 @@ sequenceDiagram
     B->>B: Decrypt all accounts with Kv and display live OTPs
 ```
 
-### 5.2 Bidirectional Sync Engine & Deterministic Reconciliation
+### 5.2 Atomic Compare-And-Swap (CAS) & Deterministic Reconciliation
 ```mermaid
 flowchart TD
     subgraph Client ["Client Device (NYX Engine)"]
         Mut["User Action (Create / Edit / Delete)"]
         LocalSave["Save Encrypted to Local Vault Storage"]
-        Queue["Queue Mutation (Pending Mutex)"]
+        Queue["Queue Mutation (expectedVersion, nextVersion)"]
         Enc["AES-256-GCM Encrypt with AAD: nyx-account:id:v1"]
         StateEngine["Sync State Machine (idle -> syncing -> synced)"]
     end
 
     subgraph Backend ["Supabase Cloud"]
-        DBTrigger["check_optimistic_concurrency() Trigger"]
+        CASProc["sync_push_account() Stored Procedure (FOR UPDATE Lock)"]
         DBTable["authenticator_accounts Table"]
     end
 
@@ -189,10 +189,10 @@ flowchart TD
     LocalSave --> Queue
     Queue --> Enc
     Enc --> StateEngine
-    StateEngine -->|"1. Push Mutations (nextVersion = version + 1)"| DBTrigger
+    StateEngine -->|"1. Push Mutation via RPC (expected, next)"| CASProc
 
-    DBTrigger -->|"Valid (NEW.version > OLD.version)"| DBTable
-    DBTrigger -->|"Conflict (NEW.version <= OLD.version)"| Reject["Reject with SQL Error 23514"]
+    CASProc -->|"Version Matches expected_version"| DBTable
+    CASProc -->|"Version Mismatch (Race Condition)"| Reject["Reject with SQLSTATE 23514"]
 
     DBTable -->|"2. Pull Remote Modified Records"| Pull["Pull Remote List"]
     Reject -->|"Mark Conflicted"| Reconcile["Deterministic Reconciler"]
@@ -201,16 +201,24 @@ flowchart TD
     subgraph ConflictResolution ["Deterministic Reconciliation Algorithm"]
         Reconcile --> CheckConf{"Conflict Detected?"}
         CheckConf -- No --> FastForward["Adopt Remote Version Cleanly"]
-        CheckConf -- Yes --> Fork["Fork Local Edit into (Conflicted Copy)"]
+        CheckConf -- Edit vs Edit --> Fork["Fork Local Edit into (Conflicted Copy)"]
+        CheckConf -- Delete vs Edit --> Restore["Restore Local Edit into (Restored from Deleted Copy)"]
         Fork --> Preserve["Save Both: Canonical Remote + Preserved Fork"]
+        Restore --> Preserve
     end
 ```
 
-### 5.3 Tombstone Deletion & Anti-Resurrection
-To prevent offline peers from resurrecting accounts deleted on another device:
-1. Deletions are published as tombstones (`deleted_at = now()`) with an incremented version number.
-2. The reconciler unconditionally honors tombstones when `remote.version >= local.version`, removing the account from local active sets.
-3. Offline devices reconciling against remote tombstones purge the local copy without re-uploading.
+### 5.3 Tombstone Deletion, Anti-Resurrection & Delete-vs-Update Conflicts
+1. **Tombstone Propagation:** Deletions publish a tombstone (`deleted_at = now()`) with an incremented version counter.
+2. **Anti-Resurrection Invariant:** Reconcilers respect tombstones when `remote.version >= local.version`, removing the account from local active sets.
+3. **Delete-vs-Update Conflict Resolution (Zero Data Loss):** If Device A deleted an account and Device B modified that account while offline:
+   - The canonical account ID is removed (honoring the tombstone deletion).
+   - Device B's local modifications are preserved as a brand new account record with a fresh UUID and label `(Restored from Deleted Copy)`.
+   - The preserved copy is re-encrypted with fresh nonces and bound AAD, ensuring zero data loss and preventing future resurrection of the deleted ID.
+
+### 5.4 Device Revocation Boundaries & Key Rotation Protocol
+- **Revocation Boundary:** Deleting a record from `devices` table purges sync query authorization, but does **not** cryptographically erase the Vault Key from hardware in an adversary's physical possession.
+- **Vault Key Rotation:** Evicting a compromised device requires generating a new 256-bit key $K_v'$, re-encrypting all active accounts under $K_v'$, updating passphrase and recovery wrappers, and re-enrolling authorized devices.
 
 ---
 

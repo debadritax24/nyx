@@ -106,31 +106,32 @@ export class SyncService {
   }
 
   /**
-   * Pushes a single mutation to Supabase with optimistic version checks.
+   * Pushes a single mutation to Supabase using atomic Compare-And-Swap (CAS) semantics.
    */
   static async pushMutation(
-    userId: string,
+    _userId: string,
     mutation: SyncMutation
   ): Promise<{ success: boolean; conflict: boolean; remoteRow?: RemoteAccountRow }> {
     try {
-      const { data, error } = await supabase
-        .from('authenticator_accounts')
-        .upsert({
-          id: mutation.id,
-          user_id: userId,
-          vault_id: mutation.vault_id,
-          ciphertext: mutation.ciphertext,
-          nonce: mutation.nonce,
-          crypto_version: mutation.crypto_version,
-          version: mutation.nextVersion,
-          deleted_at: mutation.deleted_at,
-        })
-        .select()
-        .single();
+      // Execute Atomic Compare-And-Swap (CAS) Stored Procedure
+      const { data, error } = await supabase.rpc('sync_push_account', {
+        p_id: mutation.id,
+        p_vault_id: mutation.vault_id,
+        p_ciphertext: mutation.ciphertext,
+        p_nonce: mutation.nonce,
+        p_crypto_version: mutation.crypto_version,
+        p_expected_version: mutation.expectedVersion,
+        p_next_version: mutation.nextVersion,
+        p_deleted_at: mutation.deleted_at || null,
+      });
 
       if (error) {
-        // Concurrency conflict thrown by check_optimistic_concurrency trigger
-        if (error.code === '23514' || error.message.includes('Concurrency conflict')) {
+        // Concurrency conflict thrown by sync_push_account (code 23514 or Concurrency conflict message)
+        if (
+          error.code === '23514' ||
+          error.message.includes('Concurrency conflict') ||
+          error.message.includes('Expected version')
+        ) {
           const { data: currentRemote } = await supabase
             .from('authenticator_accounts')
             .select('*')
@@ -144,7 +145,7 @@ export class SyncService {
 
       return { success: true, conflict: false, remoteRow: data };
     } catch (err: any) {
-      if (err.message && err.message.includes('Concurrency conflict')) {
+      if (err.message && (err.message.includes('Concurrency conflict') || err.message.includes('Expected version'))) {
         return { success: false, conflict: true };
       }
       throw err;
@@ -203,8 +204,29 @@ export class SyncService {
         if (remote.version > local.version) {
           // Remote is strictly newer
           if (remote.deleted_at) {
-            // Tombstone wins: remove from active set, prevent resurrection
-            accountMap.delete(remote.id);
+            // Check if local had an unpushed / conflicting offline edit
+            const isConflicted = conflictedAccountIds?.has(remote.id);
+            if (isConflicted) {
+              // Delete vs Update Conflict!
+              // Remote deleted the canonical record, but local edited it while offline.
+              // Enforce tombstone on the canonical ID (purge remote.id), but preserve local edits as a recovered copy!
+              accountMap.delete(remote.id);
+              conflictsResolved++;
+              const restoredCopy: DecryptedAccountRecord = {
+                ...local,
+                id: globalThis.crypto?.randomUUID
+                  ? globalThis.crypto.randomUUID()
+                  : `restored_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                account_name: `${local.account_name} (Restored from Deleted Copy)`,
+                version: 1,
+                deleted_at: null,
+                updated_at: new Date().toISOString(),
+              };
+              accountMap.set(restoredCopy.id, restoredCopy);
+            } else {
+              // Clean tombstone deletion: remove from active set, prevent resurrection
+              accountMap.delete(remote.id);
+            }
           } else {
             // If local had a conflicting offline edit that collided with remote
             const isConflicted = conflictedAccountIds?.has(remote.id);
@@ -217,6 +239,7 @@ export class SyncService {
                 id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `fork_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
                 account_name: `${local.account_name} (Conflicted Copy)`,
                 version: 1,
+                deleted_at: null,
                 updated_at: new Date().toISOString(),
               };
               accountMap.set(remote.id, remote);
@@ -229,7 +252,24 @@ export class SyncService {
         } else if (remote.version === local.version) {
           // Same version: if remote is deleted, apply tombstone
           if (remote.deleted_at && !local.deleted_at) {
-            accountMap.delete(remote.id);
+            const isConflicted = conflictedAccountIds?.has(remote.id);
+            if (isConflicted) {
+              accountMap.delete(remote.id);
+              conflictsResolved++;
+              const restoredCopy: DecryptedAccountRecord = {
+                ...local,
+                id: globalThis.crypto?.randomUUID
+                  ? globalThis.crypto.randomUUID()
+                  : `restored_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                account_name: `${local.account_name} (Restored from Deleted Copy)`,
+                version: 1,
+                deleted_at: null,
+                updated_at: new Date().toISOString(),
+              };
+              accountMap.set(restoredCopy.id, restoredCopy);
+            } else {
+              accountMap.delete(remote.id);
+            }
           } else if (!remote.deleted_at && !local.deleted_at) {
             // If contents differ at the exact same version, concurrent edits branched
             const contentDiffers =
@@ -244,6 +284,7 @@ export class SyncService {
                 id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `fork_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
                 account_name: `${local.account_name} (Conflicted Copy)`,
                 version: 1,
+                deleted_at: null,
                 updated_at: new Date().toISOString(),
               };
               accountMap.set(remote.id, remote);
@@ -259,6 +300,16 @@ export class SyncService {
       merged: Array.from(accountMap.values()),
       conflictsResolved,
     };
+  }
+
+  /**
+   * Re-encrypts a forked or restored account under its new UUID identity with fresh nonce and bound AAD.
+   */
+  static async reencryptForkedAccount(
+    vaultKey: Uint8Array,
+    forkedAccount: DecryptedAccountRecord
+  ): Promise<EncryptedPayload> {
+    return this.encryptAccountForSync(vaultKey, forkedAccount);
   }
 
   /**

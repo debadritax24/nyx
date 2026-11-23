@@ -1,0 +1,46 @@
+appId: com.nyx.authenticator
+---
+- launchApp
+- assertVisible: "NYX"
+
+# Tap Add Account
+- tapOn:
+    id: "add-account-fab"
+- assertVisible: "Add Account"
+- tapOn: "Enter Key Manually"
+
+# Test validation on malformed secret key
+- tapOn: "Issuer"
+- inputText: "GitHub"
+- tapOn: "Account Name"
+- inputText: "octocat@github.com"
+- tapOn: "Secret Key"
+- inputText: "INVALID_BASE32_890!#"
+- hideKeyboard
+- tapOn: "Save Account"
+- assertVisible: "Invalid Base32 secret key"
+
+# Enter valid secret key
+- eraseText
+- inputText: "JBSWY3DPEHPK3PXP"
+- hideKeyboard
+- tapOn: "Save Account"
+
+# Verify Account Card displayed on Home Screen
+- assertVisible: "GitHub"
+- assertVisible: "octocat@github.com"
+
+# Verify OTP Code is displayed (6 digits)
+- assertVisible:
+    text: "^[0-9]{3} [0-9]{3}$"
+
+# Test Copy to Clipboard
+- tapOn:
+    id: "copy-otp-button"
+- assertVisible: "Copied to clipboard"
+
+# Test Account Deletion
+- longPressOn: "GitHub"
+- assertVisible: "Delete Account"
+- tapOn: "Delete"
+- assertNotVisible: "GitHub"

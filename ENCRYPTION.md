@@ -125,3 +125,9 @@ Every account payload uploaded to the `authenticator_accounts` table is encrypte
 
 ### 6.3 Strict KDF Enforcement (Zero Silent Fallback)
 `deriveKeyArgon2id` enforces RFC 9106 Argon2id via WebAssembly (`hash-wasm`). In the event of a runtime error or unsupported platform, it **throws an explicit fatal error**. It **never** silently falls back to weaker algorithms (such as PBKDF2), guaranteeing cryptographic consistency and security across all enrolled devices.
+
+### 6.4 Forked Account Cryptographic Identity Invariance
+When concurrent modifications or delete-versus-update conflicts occur:
+1. The reconciler generates a fresh, cryptographically secure UUID (`crypto.randomUUID()`) for the preserved record.
+2. The decrypted payload is re-encrypted via `reencryptForkedAccount()` using a fresh 96-bit random nonce and newly constructed AAD: `nyx-account:<fresh_uuid>:v1`.
+3. Ciphertext from the prior identity is **never** copied or relocated. Any attempt to substitute ciphertext across account IDs fails AES-256-GCM authentication tag verification.

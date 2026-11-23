@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+### Production Hardening & Release Readiness (Phase 6)
+- **Atomic Compare-And-Swap (CAS) Concurrency:** Implemented `sync_push_account` stored procedure via migration `20261123000003_atomic_cas_concurrency.sql` with `FOR UPDATE` row locking, eliminating stale overwrite race conditions.
+- **Delete-vs-Update Conflict Resolution (Zero Data Loss):** Upgraded `reconcileAccounts` to preserve local offline modifications as `(Restored from Deleted Copy)` when encountering a remote tombstone, while purging the deleted canonical ID to prevent resurrection.
+- **Forked Account Cryptographic Identity Invariance:** Enforced that forked and restored records are re-encrypted with fresh 96-bit nonces and newly bound AAD (`nyx-account:<fresh_uuid>:v1`), strictly prohibiting ciphertext reuse across accounts.
+- **Live Supabase Integration Test Suite:** Authored and verified a 10-suite live integration test in `backend/tests/live_integration.test.js` covering registration, Argon2id vault creation, CAS concurrency conflict checks, zero-knowledge verification, tombstones, and cross-tenant RLS isolation against live Supabase infrastructure.
+- **Maestro Android UI Automation Suite:** Authored 5 declarative Maestro E2E test flows in `frontend/maestro/` covering Authentication, Vault Lifecycle, Authenticator CRUD & malformed key validation, Cloud Sync, and Recovery.
+- **Performance Benchmarking:** Verified TOTP calculation responsiveness (< 0.25ms/code for 500 accounts), AES-256-GCM vault scaling (< 80ms for 500 accounts), and 64MB Argon2id profiling in `frontend/tests/performance.test.ts`.
+- **Android Security & Privacy:** Configured clipboard auto-purging after 30 seconds for copied OTPs, enforced `FLAG_SECURE` screen privacy, and explicitly blocked `RECORD_AUDIO` permission.
+- **Accessibility Hardening:** Enforced minimum 48dp touch targets, added `accessibilityRole`, `accessibilityLabel`, and `testID` attributes across all interactive components.
+- **EAS Build Configuration:** Configured `eas.json` profiles for `development`, `preview` (APK), and `production` (AAB) with environment-separated release settings.
+
 ### Cloud Synchronization & Multi-Device Concurrency (Phase 5)
 - **Bidirectional Cloud Sync Engine:** Implemented `SyncService` with client-side AES-256-GCM encryption, strict AAD verification, and background mutation queuing in `syncStore`.
 - **Deterministic Conflict Reconciliation:** Engineered a deterministic conflict reconciler that fast-forwards clean updates and forks concurrent conflicting edits into `(Conflicted Copy)` records, guaranteeing zero data loss.

@@ -26,13 +26,18 @@ export async function deriveKeyArgon2id(
 ): Promise<Uint8Array> {
   try {
     const { argon2id } = require('hash-wasm');
+    const iterations = params.iterations || (params as any).t || 3;
+    const memory = params.memory || (params as any).m || 65536;
+    const parallelism = params.parallelism || (params as any).p || 1;
+    const keyLength = params.keyLength || 32;
+
     const derived = await argon2id({
       password: passphrase,
       salt: saltBytes,
-      iterations: params.iterations,
-      memorySize: params.memory || 65536,
-      parallelism: params.parallelism || 1,
-      hashLength: params.keyLength || 32,
+      iterations,
+      memorySize: memory,
+      parallelism,
+      hashLength: keyLength,
       outputType: 'binary',
     });
     return new Uint8Array(derived);

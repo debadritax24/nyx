@@ -1,0 +1,36 @@
+appId: com.nyx.authenticator
+---
+- launchApp
+- assertVisible: "NYX"
+- tapOn: "Create an Account"
+- assertVisible: "Create Account"
+- tapOn: "Email"
+- inputText: "maestro_test@nyx-authenticator-test.org"
+- tapOn: "Password"
+- inputText: "MaestroPass123!@#"
+- tapOn: "Confirm Password"
+- inputText: "MaestroPass123!@#"
+- hideKeyboard
+- tapOn: "Create Account"
+
+# Verify redirect into authenticated app
+- assertVisible: "NYX"
+
+# Navigate to Settings and Log Out
+- tapOn:
+    id: "settings-button"
+- assertVisible: "Settings"
+- tapOn: "Log Out"
+
+# Confirm Log Out return to Sign In screen
+- assertVisible: "Sign In"
+- assertVisible: "Email"
+- tapOn: "Email"
+- inputText: "maestro_test@nyx-authenticator-test.org"
+- tapOn: "Password"
+- inputText: "MaestroPass123!@#"
+- hideKeyboard
+- tapOn: "Sign In"
+
+# Verify session restored
+- assertVisible: "NYX"

@@ -13,6 +13,7 @@ export const Input: React.FC<InputProps> = ({ label, error, style, ...rest }) =>
       {label && <Text style={styles.label}>{label}</Text>}
       <TextInput
         placeholderTextColor={Colors.textDim}
+        accessibilityLabel={label || rest.placeholder}
         style={[styles.input, error ? styles.inputError : null, style]}
         {...rest}
       />

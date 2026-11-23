@@ -43,10 +43,20 @@ export default function DashboardScreen() {
     try {
       const Clipboard = require('expo-clipboard');
       Clipboard.setStringAsync(code);
+
+      // Purge sensitive OTP from system clipboard after 30 seconds
+      setTimeout(async () => {
+        try {
+          const current = await Clipboard.getStringAsync();
+          if (current === code) {
+            await Clipboard.setStringAsync('');
+          }
+        } catch {}
+      }, 30000);
     } catch {
       // fallback
     }
-    setCopyFeedback('Code copied to clipboard!');
+    setCopyFeedback('Code copied! Purging from clipboard in 30s');
     setTimeout(() => setCopyFeedback(null), 2500);
   };
 
@@ -195,6 +205,9 @@ export default function DashboardScreen() {
             {user && (
               <TouchableOpacity
                 onPress={() => vaultKey && triggerSync(user.id, vaultKey, accounts, setAccountsFromSync)}
+                testID="sync-status-pill"
+                accessibilityRole="button"
+                accessibilityLabel={`Cloud synchronization status: ${syncState}. Tap to synchronize now.`}
                 style={[
                   styles.syncPill,
                   syncState === 'synced' && styles.syncPillSynced,
@@ -210,6 +223,9 @@ export default function DashboardScreen() {
         <TouchableOpacity
           onPress={() => router.push('/(app)/settings')}
           style={styles.settingsButton}
+          testID="settings-button"
+          accessibilityRole="button"
+          accessibilityLabel="Settings"
           activeOpacity={0.8}
         >
           <Text style={styles.settingsIcon}>⚙</Text>
@@ -227,6 +243,7 @@ export default function DashboardScreen() {
           placeholder="Search accounts or issuers..."
           value={searchQuery}
           onChangeText={setSearchQuery}
+          accessibilityLabel="Search accounts or issuers"
           style={styles.searchInput}
         />
       </View>
@@ -261,6 +278,9 @@ export default function DashboardScreen() {
         <TouchableOpacity
           activeOpacity={0.8}
           style={[styles.fab, styles.fabSecondary]}
+          testID="manual-key-fab"
+          accessibilityRole="button"
+          accessibilityLabel="Add account with manual key"
           onPress={() => router.push('/(app)/add-manual')}
         >
           <Text style={styles.fabSecondaryText}>Manual Key</Text>
@@ -269,6 +289,9 @@ export default function DashboardScreen() {
         <TouchableOpacity
           activeOpacity={0.8}
           style={[styles.fab, styles.fabPrimary]}
+          testID="add-account-fab"
+          accessibilityRole="button"
+          accessibilityLabel="Scan QR code"
           onPress={() => router.push('/(app)/scan')}
         >
           <Text style={styles.fabPrimaryText}>+ Scan QR</Text>
