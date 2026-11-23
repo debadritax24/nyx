@@ -170,4 +170,9 @@ CREATE INDEX idx_devices_user_id ON devices(user_id);
    - Prevents cross-user account UUID collisions / hijacking (`42501 Forbidden`).
    - Guards soft-deleted tombstones against accidental resurrection with stale versions (`23514 Concurrency conflict`).
    - Verifies cross-vault integrity upon account updates.
-8. **Vault Key Rotation Interoperability:** During a two-phase Vault Key Rotation, client-side re-encrypted accounts are committed to `authenticator_accounts` using `sync_push_account` with incremented versions, guaranteeing that concurrent edits by secondary devices during rotation are caught by standard CAS conflict detection without data corruption.
+8. **Atomic Multi-Account Vault Key Rotation (`sync_rotate_vault`):** Migration `20261123000005_atomic_vault_rotation.sql` provides the `sync_rotate_vault` stored procedure for transactional master key rotation:
+   - Accepts wrapped vault envelope parameters alongside a JSONB array of re-encrypted accounts (`[{id, encrypted_payload, expected_version, next_version}]`).
+   - Acquires `FOR UPDATE` row locks on the caller's row in `vaults` and every targeted row in `authenticator_accounts` inside a single PostgreSQL transaction.
+   - Enforces ownership (`user_id = auth.uid()`) and strict monotonic versioning (`version = expected_version`) on every account. If any version mismatch occurs, the entire rotation transaction is rolled back with SQLSTATE `23514`.
+   - Atomically updates the vault record and all account records in one commit. If an error occurs midway, zero partial accounts or envelopes are committed, eliminating partial-commit state corruption.
+   - Declared `SECURITY DEFINER` with fixed `search_path = public` and explicit grant to `authenticated` role.

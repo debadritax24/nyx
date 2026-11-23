@@ -124,4 +124,15 @@ assert.throws(() => simulateCAS(2, 2, 2), /Next version 2 must be greater than 2
 assert.throws(() => simulateCAS(3, 2, 4, true, true), /Record is soft-deleted at version 3/);
 console.log('[PASS] CAS concurrency simulator verified: exact version matches required, race conditions eliminated');
 
-console.log('\nAll 7 backend security, RLS, and CAS test suites PASSED.');
+// 8. Verify atomic vault rotation stored procedure definition
+assert.ok(
+  totalSql.includes('FUNCTION public.sync_rotate_vault'),
+  'Verification failure: sync_rotate_vault stored procedure must be defined'
+);
+assert.ok(
+  totalSql.includes('GRANT EXECUTE ON FUNCTION public.sync_rotate_vault TO authenticated;'),
+  'Security requirement: sync_rotate_vault must be granted to authenticated role'
+);
+console.log('[PASS] Atomic vault rotation procedure sync_rotate_vault defined with transactional account & envelope update');
+
+console.log('\nAll 8 backend security, RLS, and CAS test suites PASSED.');

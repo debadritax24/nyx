@@ -309,4 +309,104 @@ describe('PersistentMutationQueue: Crash-Safe Durability & Recovery', () => {
     journal = await PersistentMutationQueue.loadJournal();
     expect(journal).toHaveLength(0);
   });
+
+  it('detects tampered journal entries via Keystore-keyed HMAC authentication and rejects forged data', async () => {
+    // 1. Enqueue genuine mutation
+    await PersistentMutationQueue.enqueue({
+      accountId: 'acc-genuine',
+      vaultId: 'vault-1111',
+      action: 'UPSERT',
+      expectedVersion: 1,
+      nextVersion: 2,
+      ciphertext: 'genuine_ciphertext',
+      nonce: 'genuine_nonce',
+      crypto_version: 1,
+      deleted_at: null,
+    });
+
+    // 2. An adversary with filesystem write access tampers with the journal payload
+    // to change the accountId and nextVersion, attempting to forge an entry
+    const forgedPayload = JSON.stringify({
+      schemaVersion: 1,
+      updatedAt: Date.now(),
+      hmac: 'fake_forged_hmac_signature',
+      mutations: [
+        {
+          mutationId: 'forged_mut_1',
+          accountId: 'acc-forged-target',
+          vaultId: 'vault-1111',
+          action: 'UPSERT',
+          expectedVersion: 1,
+          nextVersion: 999,
+          ciphertext: 'forged_ciphertext',
+          nonce: 'forged_nonce',
+          crypto_version: 1,
+          deleted_at: null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          state: 'ENQUEUED',
+          retryCount: 0,
+          nextRetryTimestamp: 0,
+        },
+      ],
+    });
+
+    await PersistentMutationQueue.injectCorruptedJournalForTesting(forgedPayload);
+
+    // 3. Queue must detect HMAC forgery, reject the forged payload, and recover
+    const loaded = await PersistentMutationQueue.loadJournal();
+    // Must NOT contain the forged account!
+    const foundForged = loaded.find((m) => m.accountId === 'acc-forged-target');
+    expect(foundForged).toBeUndefined();
+  });
+
+  it('safe backup rotation protects backup file from being overwritten by a corrupted primary', async () => {
+    // 1. Enqueue valid mutation to establish valid state and backup
+    await PersistentMutationQueue.enqueue({
+      accountId: 'acc-safe-backup-1',
+      vaultId: 'vault-1111',
+      action: 'UPSERT',
+      expectedVersion: 0,
+      nextVersion: 1,
+      ciphertext: 'valid_data_1',
+      nonce: 'nonce_1',
+      crypto_version: 1,
+      deleted_at: null,
+    });
+    await PersistentMutationQueue.enqueue({
+      accountId: 'acc-safe-backup-2',
+      vaultId: 'vault-1111',
+      action: 'UPSERT',
+      expectedVersion: 0,
+      nextVersion: 1,
+      ciphertext: 'valid_data_2',
+      nonce: 'nonce_2',
+      crypto_version: 1,
+      deleted_at: null,
+    });
+
+    // 2. Corrupt primary journal with invalid truncated data
+    await PersistentMutationQueue.injectCorruptedJournalForTesting('{"broken_truncated":');
+
+    // 3. Load journal: it detects corruption and recovers from backup
+    const recovered = await PersistentMutationQueue.loadJournal();
+    expect(recovered.length).toBeGreaterThanOrEqual(1);
+    expect(recovered[0].accountId).toBe('acc-safe-backup-1');
+
+    // 4. Primary is now repaired and valid. Enqueue new mutation
+    await PersistentMutationQueue.enqueue({
+      accountId: 'acc-safe-backup-3',
+      vaultId: 'vault-1111',
+      action: 'UPSERT',
+      expectedVersion: 0,
+      nextVersion: 1,
+      ciphertext: 'valid_data_3',
+      nonce: 'nonce_3',
+      crypto_version: 1,
+      deleted_at: null,
+    });
+
+    const finalJournal = await PersistentMutationQueue.loadJournal();
+    expect(finalJournal.some((m) => m.accountId === 'acc-safe-backup-3')).toBe(true);
+  });
 });

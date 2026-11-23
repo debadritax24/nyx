@@ -132,22 +132,34 @@ When concurrent modifications or delete-versus-update conflicts occur:
 2. The decrypted payload is re-encrypted via `reencryptForkedAccount()` using a fresh 96-bit random nonce and newly constructed AAD: `nyx-account:<fresh_uuid>:v1`.
 3. Ciphertext from the prior identity is **never** copied or relocated. Any attempt to substitute ciphertext across account IDs fails AES-256-GCM authentication tag verification.
 
-### 6.5 Two-Phase Recoverable Master Vault Key Rotation ($K_v \to K_v'$)
-Implemented in `VaultService.rotateVaultKey` (`frontend/src/services/vaultService.ts`):
-1. **Pre-Flight Decryption Assurance:** Before any disk or remote state is modified, `LocalVaultStorage.loadAccounts(oldVaultKey)` is invoked to verify that the active $K_v$ can cleanly decrypt local accounts. If decryption fails, the rotation aborts with zero side effects.
-2. **Phase 1: Preparation & Manifest Persistence (`PREPARED`):**
-   - Generates a new 256-bit symmetric key $K_v'$ via CSPRNG.
+### 6.5 Atomic Master Vault Key Rotation ($K_v \to K_v'$) & Zero Plaintext Disk Invariant
+Implemented in `VaultService.rotateVaultKey` (`frontend/src/services/vaultService.ts`) and backed by migration `20261123000005_atomic_vault_rotation.sql`:
+1. **Pre-Flight Decryption Assurance:** Before any disk or remote state is modified, `LocalVaultStorage.loadAccounts(oldVaultKey)` is invoked to verify that active $K_v$ cleanly decrypts local accounts. If decryption fails, the rotation aborts with zero side effects.
+2. **Phase 1: Preparation, Keystore Staging & Zero-Plaintext Manifest (`PREPARED`):**
+   - Generates a fresh 256-bit symmetric key $K_v'$ via CSPRNG.
+   - **Zero Plaintext on Disk:** $K_v'$ is never written to disk in plaintext. Instead:
+     - $K_v'$ is saved directly to the Android Keystore staging slot (`nyx_staging_vault_key_v1`).
+     - $K_v'$ is wrapped under the active $K_v$ via AES-256-GCM (`wrappedNewVaultKeyCiphertext`, `wrappedNewVaultKeyNonce`, AAD: `nyx-rotation-manifest:v1`).
    - Decrypts all local accounts in memory and re-encrypts them under $K_v'$ using fresh 96-bit nonces and bound AAD (`nyx-account:<id>:v1`).
    - Wraps $K_v'$ under the Master Passphrase and 24-word recovery code with fresh Argon2id salts and nonces.
-   - Atomically writes a rotation manifest (`nyx_rotation_manifest_v1.json`) to disk with `manifestVersion: 1`, `stage: 'PREPARED'`, new envelope, and re-encrypted accounts. The active Keystore key and storage remain bound to $K_v$.
-3. **Phase 2: Cloud Commit (`CLOUD_COMMITTED`):**
-   - Pushes the new wrapped vault envelope and re-encrypted accounts to Supabase via atomic CAS (`sync_push_account`).
-   - Updates the rotation manifest on disk, advancing its stage to `'CLOUD_COMMITTED'`.
+   - Atomically writes a rotation manifest (`nyx_rotation_manifest_v2.json`) to disk with `manifestVersion: 2`, `stage: 'PREPARED'`, new envelope, and re-encrypted accounts. Active Keystore key (`nyx_vault_key_v1`) remains bound to $K_v$.
+3. **Phase 2: Atomic Cloud Commit (`sync_rotate_vault`):**
+   - Dispatches a single atomic RPC call to PostgreSQL stored procedure `public.sync_rotate_vault(...)`.
+   - The stored procedure acquires `FOR UPDATE` row locks on the user's `vaults` record and all targeted `authenticator_accounts` records.
+   - Enforces strict monotonic version checks (`version = expected_version`) for all accounts in a single PostgreSQL transaction.
+   - If all version checks pass, it updates the vault envelope and account ciphertexts simultaneously.
+   - If any account has an expected version mismatch or network error occurs, the entire transaction rolls back cleanly. If cloud commit fails, the client rolls back locally, clears the Keystore staging key, and deletes the manifest.
+   - Upon successful RPC return, the rotation manifest stage advances to `'CLOUD_COMMITTED'`.
 4. **Local Commit & Manifest Cleanup (`COMPLETED`):**
-   - Saves $K_v'$ to the Android Keystore (`KeystoreService.saveVaultKey`).
+   - Promotes the staged Keystore key to the primary slot (`KeystoreService.promoteStagingVaultKey`), atomically replacing $K_v$ with $K_v'$.
    - Saves re-encrypted accounts to local storage under $K_v'$.
    - Executes post-flight verification (`loadAccounts(newVaultKey)`) ensuring local decryption succeeds.
-   - Purges `nyx_rotation_manifest_v1.json` from disk.
+   - Purges `nyx_rotation_manifest_v2.json` and clears any remaining staging keys from Keystore.
+5. **Crash Recovery Semantics (`recoverInterruptedRotation`):**
+   - On application startup, if `nyx_rotation_manifest_v2.json` is detected:
+     - Queries Supabase `vaults` table to determine whether cloud rotation completed (`committed_at` / envelope match).
+     - If cloud committed: retrieves $K_v'$ from Keystore staging slot (or unwraps `wrappedNewVaultKeyCiphertext` using $K_v$), promotes $K_v'$, commits local accounts, and removes manifest.
+     - If cloud did NOT commit: clears Keystore staging key, deletes manifest, and remains safely unlocked under $K_v$ without user lockout.
 5. **Startup Crash Recovery (`recoverInterruptedRotation`):**
    - Automatically executed by `vaultStore.loadFromLocalKeystore` upon app launch.
    - **Interrupted at `PREPARED`:** The cloud and local Keystore still hold $K_v$. The uncommitted manifest is safely purged, keeping $K_v$ active.

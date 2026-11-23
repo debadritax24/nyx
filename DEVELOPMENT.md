@@ -96,13 +96,14 @@ npm -v
 
 ## 5. Verification & Test Execution
 
-### 5.1 Unit & Vector Tests
+### 5.1 Unit, Vector & Security Tests
 ```bash
 npm --prefix frontend test
+# 12 test suites, 94 tests passing
 ```
 
-### 5.2 Live Supabase Integration & CAS Concurrency Tests
-Executes registration, Argon2id vault creation, atomic Compare-And-Swap (CAS) conflict rejection, and tenant isolation against live Supabase cloud infrastructure:
+### 5.2 Live Supabase Integration & Atomic CAS/Rotation Tests
+Executes registration, Argon2id vault creation, atomic Compare-And-Swap (CAS) conflict rejection, atomic multi-account key rotation (`sync_rotate_vault`), and tenant isolation against live Supabase cloud infrastructure:
 ```bash
 npm --prefix backend test
 # or directly

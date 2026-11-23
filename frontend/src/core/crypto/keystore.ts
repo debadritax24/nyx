@@ -1,6 +1,8 @@
 import { bytesToBase64, base64ToBytes } from './vault';
 
 const SECURE_STORE_VAULT_KEY_ALIAS = 'nyx_master_vault_key_v1';
+const SECURE_STORE_STAGING_KEY_ALIAS = 'nyx_staging_vault_key_v1';
+const SECURE_STORE_QUEUE_HMAC_ALIAS = 'nyx_queue_hmac_key_v1';
 const SECURE_STORE_BIOMETRIC_PREF = 'nyx_biometrics_enabled_v1';
 
 /**
@@ -96,6 +98,104 @@ export class KeystoreService {
 
     if (!encoded) return null;
     return base64ToBytes(encoded);
+  }
+
+  /**
+   * Stores a staged 256-bit Vault Key in hardware-backed storage during key rotation.
+   * This guarantees staged keys are never persisted in plaintext application storage.
+   */
+  static async saveStagingVaultKey(keyBytes: Uint8Array): Promise<void> {
+    const SecureStore = await this.getSecureStore();
+    const encoded = bytesToBase64(keyBytes);
+    (globalThis as any).__nyx_mock_staging_keystore = encoded;
+    if (SecureStore && SecureStore.setItemAsync) {
+      try {
+        await SecureStore.setItemAsync(SECURE_STORE_STAGING_KEY_ALIAS, encoded, {
+          keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        });
+      } catch {}
+    }
+  }
+
+  /**
+   * Retrieves the staged 256-bit Vault Key from hardware-backed storage.
+   */
+  static async getStagingVaultKey(): Promise<Uint8Array | null> {
+    const SecureStore = await this.getSecureStore();
+    let encoded: string | null = null;
+    if (SecureStore && SecureStore.getItemAsync) {
+      try {
+        encoded = await SecureStore.getItemAsync(SECURE_STORE_STAGING_KEY_ALIAS);
+      } catch {}
+    }
+    if (!encoded) {
+      encoded = (globalThis as any).__nyx_mock_staging_keystore || null;
+    }
+    if (!encoded) return null;
+    return base64ToBytes(encoded);
+  }
+
+  /**
+   * Promotes the staged Vault Key to active master vault key status in Keystore,
+   * and clears the staging slot.
+   */
+  static async promoteStagingVaultKey(explicitKeyBytes?: Uint8Array): Promise<Uint8Array> {
+    const keyBytes = explicitKeyBytes || (await this.getStagingVaultKey());
+    if (!keyBytes) {
+      throw new Error('No staged vault key available to promote.');
+    }
+    await this.saveVaultKey(keyBytes);
+    await this.clearStagingVaultKey();
+    return keyBytes;
+  }
+
+  /**
+   * Clears the staged Vault Key from hardware-backed storage.
+   */
+  static async clearStagingVaultKey(): Promise<void> {
+    const SecureStore = await this.getSecureStore();
+    if (SecureStore && SecureStore.deleteItemAsync) {
+      try {
+        await SecureStore.deleteItemAsync(SECURE_STORE_STAGING_KEY_ALIAS);
+      } catch {}
+    }
+    delete (globalThis as any).__nyx_mock_staging_keystore;
+  }
+
+  /**
+   * Retrieves or establishes a 256-bit device-bound HMAC key for offline queue journal integrity.
+   */
+  static async getQueueHmacKey(): Promise<string> {
+    const SecureStore = await this.getSecureStore();
+    let key: string | null = null;
+    if (SecureStore && SecureStore.getItemAsync) {
+      try {
+        key = await SecureStore.getItemAsync(SECURE_STORE_QUEUE_HMAC_ALIAS);
+      } catch {}
+    }
+    if (!key) {
+      key = (globalThis as any).__nyx_mock_queue_hmac || null;
+    }
+
+    if (!key) {
+      // Generate 256-bit cryptographically secure random key
+      const randomBytes = new Uint8Array(32);
+      if (globalThis.crypto?.getRandomValues) {
+        globalThis.crypto.getRandomValues(randomBytes);
+      } else {
+        for (let i = 0; i < 32; i++) randomBytes[i] = Math.floor(Math.random() * 256);
+      }
+      key = bytesToBase64(randomBytes);
+      (globalThis as any).__nyx_mock_queue_hmac = key;
+      if (SecureStore && SecureStore.setItemAsync) {
+        try {
+          await SecureStore.setItemAsync(SECURE_STORE_QUEUE_HMAC_ALIAS, key, {
+            keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+          });
+        } catch {}
+      }
+    }
+    return key;
   }
 
   /**

@@ -21,6 +21,7 @@ android/build/
 ios/build/
 ios/Pods/
 *.orig.*
+expo-env.d.ts
 
 # Supabase Local Development
 backend/supabase/.temp/

@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+### Adversarial Recovery Audit, Key Rotation Integrity & Release Validation (Phase 9)
+- **Atomic Vault Key Rotation Stored Procedure (Migration 5):** Authored and deployed `20261123000005_atomic_vault_rotation.sql` to live Supabase. Implemented `public.sync_rotate_vault`, which atomically migrates the vault envelope and all re-encrypted account records in a single PostgreSQL transaction with `FOR UPDATE` row locking. Eliminates partial cloud-commit states where accounts could become encrypted under differing keys.
+- **Manifest Key Confidentiality & Hardware Keystore Staging:** Eliminated raw `newVaultKeyBase64` from application storage and manifest files (`nyx_rotation_manifest_v2.json`). Staged key material is now persisted in hardware-backed Android Keystore under a dedicated staging alias (`nyx_staging_vault_key_v1`) and encrypted under the old Vault Key via AES-256-GCM.
+- **Keystore-Keyed HMAC Journal Authentication:** Replaced non-cryptographic DJB2 checksums in `PersistentMutationQueue` with device-bound HMAC-SHA256 authenticated integrity tags keyed by `nyx_queue_hmac_key_v1` in Android Keystore, preventing sandbox tampering and journal forgery.
+- **Protected Safe Backup Rotation:** Upgraded `PersistentMutationQueue.saveJournalInternal` to verify the validity and HMAC of the existing primary journal before rotating to `.bak`, ensuring corrupted primary files can never overwrite valid backup journals.
+- **Android Auto Backup Disabled:** Explicitly configured `"allowBackup": false` in `app.json` to prevent broken restore states from Android Auto Backup without Keystore keys.
+- **Expanded Test Coverage:** Expanded frontend test suite to 94 passing tests across 12 test suites and 8 backend security assertion suites, adding tests for manifest key confidentiality, atomic RPC rotation, staging key promotion, backup protection, and HMAC forgery rejection. Live Supabase test suite verified all rotation and CAS constraints against live endpoint.
+- **Honest Release Gate Classification:** Maintained release gate classification as `CONDITIONALLY READY`, documenting exact user runbooks for physical device testing and EAS project permission alignment.
+
 ### Final Android Validation, Recovery Assurance & Beta Release Gate (Phase 8)
 - **Queue Mutex & Concurrency Serialization:** Hardened `PersistentMutationQueue` with an async serialization mutex (`runExclusive`), eliminating race conditions during concurrent enqueue, processing, and acknowledgement operations.
 - **Journal Integrity Checksumming & Backup Recovery:** Added schema versioning (`schemaVersion: 1`) and integrity checksums to `PersistentMutationQueue`. Implemented automatic failover recovery from `nyx_mutation_queue_v1.journal.bak` upon detecting truncated or corrupted journal files, preventing data loss.

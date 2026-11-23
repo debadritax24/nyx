@@ -151,6 +151,6 @@ nyx/
 
 ## Project Status
 
-- **Current Milestone:** Phase 8 Completed — Beta Release Gate (`CONDITIONALLY READY`).
-- Architecture, cryptography, zero-knowledge invariants, atomic CAS concurrency, offline queue durability (with serialization mutex & backup recovery), and two-phase vault rotation verified (87 frontend tests passing, 17 backend security suites passing).
+- **Current Milestone:** Phase 9 Completed — Adversarial Recovery Audit, Key Rotation Integrity & Release Validation (`CONDITIONALLY READY`).
+- Architecture, cryptography, zero-knowledge invariants, atomic CAS concurrency, atomic multi-account vault key rotation (`sync_rotate_vault`), zero plaintext keys on disk, and Keystore-keyed HMAC queue durability verified (94 frontend tests passing, 18 backend security/integration test suites passing).
 - See [memory.md](file:///home/tushardevx01/Documents/nyx/memory.md) and [ROADMAP.md](file:///home/tushardevx01/Documents/nyx/ROADMAP.md) for live progress.

@@ -97,10 +97,21 @@
 
 ---
 
-## Phase 9: Physical Field Validation & Store Release [ROADMAP]
+## Phase 9: Adversarial Recovery Audit & Key Rotation Integrity [COMPLETED]
+- [x] Authored and deployed `20261123000005_atomic_vault_rotation.sql` creating `public.sync_rotate_vault`, eliminating partial cloud-commit states via atomic PostgreSQL transactions.
+- [x] Eliminated plaintext key storage in rotation manifest (`nyx_rotation_manifest_v2.json`); staged key is persisted in hardware-backed Android Keystore and encrypted under old key.
+- [x] Upgraded offline queue journal integrity from plain non-cryptographic checksums to device-bound Keystore-keyed HMAC-SHA256 authentication.
+- [x] Implemented safe backup rotation protecting `.bak` journals from being overwritten by corrupted primary files.
+- [x] Explicitly disabled Android Auto Backup (`allowBackup: false`) in `app.json`.
+- [x] Expanded automated test suite to 94 passing frontend tests (12 suites) and 8 backend security suites, plus 10 live Supabase integration test suites against live endpoint.
+- [x] Re-audited EAS project ownership and physical hardware probe boundaries; classified status as `CONDITIONALLY READY`.
+
+---
+
+## Phase 10: Physical Hardware Probing, Store Packaging & Production Deployment [ROADMAP]
 - [ ] Connect physical Android test devices via ADB to execute Maestro automated flows.
 - [ ] Test hardware TEE / StrongBox Keystore key invalidation upon new biometric enrollment.
-- [ ] Link active EAS project under authorized organization/user to generate preview APK.
+- [ ] Align EAS cloud project authorization or execute standalone Gradle build (`./gradlew assembleRelease`).
+- [ ] Third-party external penetration testing (MASVS Level 2).
 - [ ] Supabase Realtime channel subscription for instant multi-device change notifications.
-- [ ] Automated encrypted cloud backup exports to Google Drive / WebDAV.
 - [ ] Google Play Store and F-Droid automated deployment pipeline via GitHub Actions.

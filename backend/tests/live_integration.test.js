@@ -467,12 +467,119 @@ async function runLiveIntegrationTests() {
     // Clean up temporary concurrent insert record
     await clientA.from('authenticator_accounts').delete().eq('id', concurrentInsertId);
 
+    // 6.6 Atomic Vault Key Rotation Procedure (sync_rotate_vault)
+    console.log('  -> [Test 6.6] Atomic Vault Key Rotation (sync_rotate_vault)...');
+    const crypto = require('crypto');
+    const rotatedVaultKey = crypto.randomBytes(32);
+    const rotatedEncAccount = await encryptAesGcm(
+      rotatedVaultKey,
+      JSON.stringify({ ...originalAccountPlaintext, account_name: 'rotated-account' }),
+      accountAad
+    );
+
+    const rotatedSaltBytes = crypto.randomBytes(16);
+    const rotatedSaltHex = rotatedSaltBytes.toString('hex');
+    const rotatedWrappingKeyHex = await argon2id({
+      password: password,
+      salt: rotatedSaltBytes,
+      iterations: 3,
+      memorySize: 65536,
+      hashLength: 32,
+      parallelism: 4,
+      outputType: 'hex',
+    });
+    const rotatedWrappedEnvelope = await encryptAesGcm(
+      Buffer.from(rotatedWrappingKeyHex, 'hex'),
+      rotatedVaultKey.toString('base64'),
+      'nyx-vault-wrap:v1'
+    );
+    const kdfParams = { m: 65536, t: 3, p: 4, v: 1 };
+
+    const { data: rotData, error: rotErr } = await clientA.rpc('sync_rotate_vault', {
+      p_vault_id: vaultId,
+      p_passphrase_wrapped_vault_key: rotatedWrappedEnvelope.ciphertext,
+      p_passphrase_wrap_nonce: rotatedWrappedEnvelope.nonce,
+      p_passphrase_kdf_salt: rotatedSaltHex,
+      p_passphrase_kdf_params: kdfParams,
+      p_recovery_wrapped_vault_key: rotatedWrappedEnvelope.ciphertext,
+      p_recovery_wrap_nonce: rotatedWrappedEnvelope.nonce,
+      p_recovery_kdf_salt: rotatedSaltHex,
+      p_recovery_kdf_params: kdfParams,
+      p_accounts: [
+        {
+          id: accountId,
+          expected_version: 2,
+          next_version: 3,
+          ciphertext: rotatedEncAccount.ciphertext,
+          nonce: rotatedEncAccount.nonce,
+          crypto_version: 1,
+          deleted_at: null,
+        },
+      ],
+    });
+    assert.ifError(rotErr);
+    assert.ok(rotData && rotData.success, 'sync_rotate_vault must return success');
+    assert.strictEqual(rotData.migrated_accounts, 1);
+
+    // Verify database was updated to new wrapped key and incremented account version
+    const { data: checkRotVault } = await clientA.from('vaults').select('*').eq('id', vaultId).single();
+    assert.strictEqual(checkRotVault.passphrase_wrapped_vault_key, rotatedWrappedEnvelope.ciphertext);
+
+    const { data: checkRotAcc } = await clientA.from('authenticator_accounts').select('*').eq('id', accountId).single();
+    assert.strictEqual(checkRotAcc.version, 3);
+    assert.strictEqual(checkRotAcc.ciphertext, rotatedEncAccount.ciphertext);
+    console.log('     PASS: Atomic vault rotation procedure migrated envelope and accounts in a single transaction.');
+
+    // 6.7 Concurrency conflict rejection on rotation
+    console.log('  -> [Test 6.7] Concurrency conflict on stale rotation batch...');
+    const { error: staleRotErr } = await clientA.rpc('sync_rotate_vault', {
+      p_vault_id: vaultId,
+      p_passphrase_wrapped_vault_key: rotatedWrappedEnvelope.ciphertext,
+      p_passphrase_wrap_nonce: rotatedWrappedEnvelope.nonce,
+      p_passphrase_kdf_salt: rotatedSaltHex,
+      p_passphrase_kdf_params: kdfParams,
+      p_recovery_wrapped_vault_key: rotatedWrappedEnvelope.ciphertext,
+      p_recovery_wrap_nonce: rotatedWrappedEnvelope.nonce,
+      p_recovery_kdf_salt: rotatedSaltHex,
+      p_recovery_kdf_params: kdfParams,
+      p_accounts: [
+        {
+          id: accountId,
+          expected_version: 1, // Stale! DB is at 3
+          next_version: 4,
+          ciphertext: rotatedEncAccount.ciphertext,
+          nonce: rotatedEncAccount.nonce,
+          crypto_version: 1,
+          deleted_at: null,
+        },
+      ],
+    });
+    assert.ok(staleRotErr && (staleRotErr.code === '23514' || staleRotErr.message.includes('Concurrency conflict')));
+    console.log('     PASS: Stale rotation batch atomically rejected with 23514.');
+
+    // 6.8 Cross-user authorization on rotation
+    console.log('  -> [Test 6.8] Cross-user authorization guard on rotation...');
+    const { error: foreignRotErr } = await clientB.rpc('sync_rotate_vault', {
+      p_vault_id: vaultId, // User A vault!
+      p_passphrase_wrapped_vault_key: rotatedWrappedEnvelope.ciphertext,
+      p_passphrase_wrap_nonce: rotatedWrappedEnvelope.nonce,
+      p_passphrase_kdf_salt: rotatedSaltHex,
+      p_passphrase_kdf_params: kdfParams,
+      p_recovery_wrapped_vault_key: rotatedWrappedEnvelope.ciphertext,
+      p_recovery_wrap_nonce: rotatedWrappedEnvelope.nonce,
+      p_recovery_kdf_salt: rotatedSaltHex,
+      p_recovery_kdf_params: kdfParams,
+      p_accounts: [],
+    });
+    assert.ok(foreignRotErr && (foreignRotErr.code === '42501' || foreignRotErr.message.includes('Unauthorized')));
+    console.log('     PASS: Cross-user rotation blocked with 42501 Unauthorized.');
+
     // -------------------------------------------------------------------------
     // 7. Tombstone Soft-Deletion Propagation & Resurrection Guard
     // -------------------------------------------------------------------------
     console.log('\n[7/10] Testing Tombstone Deletion Propagation & Resurrection Guard...');
     const tombstoneEnc = await encryptAesGcm(
-      rawVaultKey,
+      rotatedVaultKey,
       JSON.stringify({ ...originalAccountPlaintext, deleted_at: new Date().toISOString() }),
       accountAad
     );
@@ -483,14 +590,14 @@ async function runLiveIntegrationTests() {
       p_ciphertext: tombstoneEnc.ciphertext,
       p_nonce: tombstoneEnc.nonce,
       p_crypto_version: 1,
-      p_expected_version: 2, // Current database version is 2
-      p_next_version: 3,
+      p_expected_version: 3, // Current database version is 3
+      p_next_version: 4,
       p_deleted_at: new Date().toISOString(),
     });
     assert.ifError(tombErr);
-    assert.strictEqual(tombData.version, 3);
+    assert.strictEqual(tombData.version, 4);
     assert.ok(tombData.deleted_at, 'Tombstone deleted_at must be populated');
-    console.log('  -> Tombstone persisted at Version 3 with soft-deletion timestamp.');
+    console.log('  -> Tombstone persisted at Version 4 with soft-deletion timestamp.');
 
     // 7.1 Attempts to bypass soft deletion (Accidental resurrection with stale version)
     console.log('  -> [Test 7.1] Guard against accidental resurrection of soft-deleted record...');
@@ -500,8 +607,8 @@ async function runLiveIntegrationTests() {
       p_ciphertext: encUpdateB.ciphertext,
       p_nonce: encUpdateB.nonce,
       p_crypto_version: 1,
-      p_expected_version: 2, // Stale version (DB is at 3, soft-deleted)
-      p_next_version: 4,
+      p_expected_version: 3, // Stale version (DB is at 4, soft-deleted)
+      p_next_version: 5,
       p_deleted_at: null,
     });
     assert.ok(resurrectErr, 'Resurrection of soft-deleted tombstone with stale version must be rejected');
@@ -520,8 +627,8 @@ async function runLiveIntegrationTests() {
       p_ciphertext: encUpdateB.ciphertext,
       p_nonce: encUpdateB.nonce,
       p_crypto_version: 1,
-      p_expected_version: 3,
-      p_next_version: 4,
+      p_expected_version: 4,
+      p_next_version: 5,
       p_deleted_at: null,
     });
     assert.ok(unauthErr, 'Unauthenticated RPC call must fail');
@@ -531,9 +638,6 @@ async function runLiveIntegrationTests() {
         unauthErr.message.includes('not authenticated')
     );
     console.log('     PASS: Unauthenticated RPC execution blocked with 42501.');
-    assert.strictEqual(tombData.version, 3);
-    assert.ok(tombData.deleted_at, 'Tombstone deleted_at must be populated');
-    console.log('  -> Tombstone persisted at Version 3 with soft-deletion timestamp.');
 
     // -------------------------------------------------------------------------
     // 8. Device Revocation Verification

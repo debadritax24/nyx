@@ -103,24 +103,29 @@ Every table containing user data (`profiles`, `vaults`, `authenticator_accounts`
   > **Cryptographic Limitation of Device Revocation:** Deleting a device registration in the database **does not and cannot** cryptographically wipe an already-extracted Vault Key from hardware in an adversary's physical possession. If a device has been physically compromised, the user must perform a **Vault Key Rotation**.
 
 ### 7.2 Two-Phase Recoverable Vault Key Rotation Protocol
-To completely evict a compromised hardware device holding $K_v$, a full Vault Key Rotation is executed using a crash-recoverable two-phase protocol with on-disk state tracking (`nyx_rotation_manifest_v1.json`):
+To completely evict a compromised hardware device holding $K_v$, a full Vault Key Rotation is executed using an atomic, crash-recoverable protocol with on-disk state tracking (`nyx_rotation_manifest_v2.json`) and a single PostgreSQL migration transaction (`sync_rotate_vault`):
 1. **Pre-flight Decryption Verification:** Before any state mutation occurs, the client verifies that the current $K_v$ can successfully decrypt all local accounts. If decryption fails, the operation aborts immediately with zero modification to disk or cloud.
-2. **State 1 (`PREPARED`):** 
+2. **State 1 (`PREPARED`) & Key Confidentiality:** 
    - A fresh 256-bit symmetric Vault Key ($K_v'$) is generated via CSPRNG.
+   - **Zero Plaintext Key Exposure:** The raw $K_v'$ is saved into the hardware-backed Android Keystore under a dedicated staging alias (`nyx_staging_vault_key_v1`). Additionally, $K_v'$ is encrypted under the active $K_v$ via AES-256-GCM (`wrappedNewVaultKeyCiphertext`, AAD: `nyx-rotation-manifest:v1`) for defense-in-depth recovery. The raw key is **never** written to ordinary application storage in plaintext.
    - All active local accounts are decrypted in memory with $K_v$ and re-encrypted with $K_v'$ using fresh 96-bit nonces and bound AAD (`nyx-account:<id>:v1`).
    - $K_v'$ is wrapped under the Master Passphrase and emergency recovery code using freshly generated Argon2id salts.
-   - The state manifest is atomically written to disk recording stage `PREPARED`, the new wrapped envelope, and the re-encrypted accounts. The old key $K_v$ remains active in Keystore and storage.
-3. **State 2 (`CLOUD_COMMITTED`):** 
-   - The client pushes the new wrapped vault envelope and re-encrypted accounts to Supabase in an atomic CAS operation.
-   - Once cloud write succeeds, the manifest stage transitions to `CLOUD_COMMITTED` on disk.
+   - The state manifest is atomically written to disk recording stage `PREPARED`, the new wrapped envelopes, and the re-encrypted accounts payload.
+3. **State 2 (`COMMITTED`) & Atomic PostgreSQL Transaction:** 
+   - The client invokes `sync_rotate_vault` (Migration `20261123000005_atomic_vault_rotation.sql`).
+   - In a **single atomic PostgreSQL transaction**, the stored procedure locks the `vaults` row (`FOR UPDATE`), locks and validates every account against its `expected_version` (`FOR UPDATE`), updates all account ciphertexts and incremented versions, and updates the `vaults` envelope.
+   - **Zero Partial Commit Invariant:** If any account version collides or network terminates mid-request, PostgreSQL rolls back the entire transaction. The cloud is never left in a partial state where some accounts are encrypted under $K_v'$ while others remain on $K_v$.
+   - Once cloud call confirms commit, manifest advances to `COMMITTED` on disk.
 4. **Local Commit & Cleanup (`COMPLETED`):**
-   - $K_v'$ is committed to the local Android Keystore (`KeystoreService.saveVaultKey`).
+   - $K_v'$ is promoted to the active master vault key alias in Android Keystore (`KeystoreService.promoteStagingVaultKey`), clearing the staging slot.
    - Local storage is overwritten with the newly encrypted accounts.
    - The client performs a post-flight decryption check using $K_v'$ to verify that accounts load cleanly.
    - The on-disk rotation manifest is deleted.
 5. **Startup Crash Recovery (`recoverInterruptedRotation`):**
-   - If the application crashes or is killed during `PREPARED`, startup recovery discards the manifest; the cloud and local Keystore still hold $K_v$, so the user experiences zero disruption.
-   - If the application crashes during `CLOUD_COMMITTED`, the cloud already has $K_v'$ while the local Keystore still has $K_v$. On reboot, `recoverInterruptedRotation` reads the manifest, commits $K_v'$ to the local Keystore and storage, and purges the manifest, guaranteeing the user is never locked out.
+   - Automatically executed upon application startup before unlocking the vault.
+   - Compares the remote vault's `passphrase_wrapped_vault_key` against `manifest.passphraseEnvelope.wrappedKey`.
+   - **If Cloud is Committed:** Retrieves $K_v'$ from Keystore staging slot (or unwraps via $K_v$), promotes $K_v'$ to master key in Keystore, commits local accounts storage, and purges manifest. Guarantees zero user lockout.
+   - **If Cloud is NOT Committed:** Cloud still holds $K_v$. Recovery clears the staging key slot from Keystore and discards the manifest. $K_v$ remains active locally and remotely without corruption.
 6. **Secondary Device Re-Enrollment:** All authorized peer devices unwrap $K_v'$ using the Master Passphrase or 24-word code; the compromised device holding only $K_v$ cannot decrypt future records.
 
 ### 7.3 Zero-Knowledge Information Disclosure Matrix
@@ -143,18 +148,20 @@ To completely evict a compromised hardware device holding $K_v$, a full Vault Ke
 - **Tombstone Anti-Resurrection & Accidental Resurrection Guard:** Soft deletions (`deleted_at`) ensure peer devices never resurrect deleted accounts after coming online. In `sync_push_account`, attempts to update a soft-deleted tombstone with a stale version or without monotonic version increment are rejected with `23514`.
 - **Delete-vs-Update Conflict Preservation:** If a device modified an account while offline and encounters a remote tombstone, the modified account is automatically preserved as a recovered copy (`(Restored from Deleted Copy)`), eliminating data loss.
 
-### 7.5 Crash-Safe Persistent Mutation Queue (Write-Ahead Journaling & Integrity)
-- **Durable State Machine:** The offline queue in `PersistentMutationQueue` implements a 5-stage state machine:
+### 7.5 Crash-Safe Persistent Mutation Queue (Journaling & HMAC Integrity)
+- **Application-Level Journal (Not SQLite WAL):** The offline mutation queue in `PersistentMutationQueue` is an application-level append-and-replace file journal using atomic filesystem renames (`.tmp` to `.journal`). It is **not** an OS-level SQLite write-ahead log. Durability guarantees depend on Android application sandbox filesystem atomicity.
+- **Durable State Machine:** Implements a 5-stage state machine:
   $$\text{ENQUEUED} \longrightarrow \text{PROCESSING} \longrightarrow \text{ACKNOWLEDGED} \quad (\text{or } \text{RETRYING} / \text{PERMANENTLY\_FAILED})$$
 - **Queue Mutex Serialization (`runExclusive`):** All concurrent async queue operations (`enqueue`, `markProcessing`, `acknowledge`, `recordFailure`, `recoverInterruptedMutations`, `loadJournal`) are serialized via an internal async lock to eliminate concurrent read-modify-write race conditions and lost updates.
-- **Journal Envelope & Integrity Checksums:** The journal is persisted in `nyx_mutation_queue_v1.journal` with a versioned envelope (`schemaVersion: 1`, `checksum`, `updatedAt`). On load, SHA-256 integrity checksums detect truncation or partial writes.
-- **Backup Rotation & Auto-Repair:** On every atomic write, the prior journal is rotated to `nyx_mutation_queue_v1.journal.bak`. If the primary journal is corrupted or truncated, the queue automatically recovers from `.bak` and repairs the primary file. If both are unrecoverable, the corrupted journal is safely archived to `nyx_mutation_queue_v1.journal.corrupted.<timestamp>`, and orphaned `.tmp` files are cleaned up.
+- **Keystore-Keyed HMAC-SHA256 Authenticity:** To prevent sandbox filesystem tampering or forged mutations, the journal envelope is authenticated using HMAC-SHA256 keyed by a device-bound 256-bit symmetric key (`nyx_queue_hmac_key_v1`) stored in the Android Keystore. Any modification to mutations or envelope without access to the Keystore fails HMAC validation and is rejected.
+- **Safe Backup Rotation & Corruption Failover:** On every atomic write, the prior journal is validated before being copied to `nyx_mutation_queue_v1.journal.bak`. A corrupted primary file can **never** overwrite the only valid backup. If the primary journal fails HMAC or is truncated, the queue automatically recovers from `.bak` and repairs the primary file. If both are unrecoverable, the corrupted journal is safely archived to `nyx_mutation_queue_v1.journal.corrupted.<timestamp>`, and orphaned `.tmp` files are cleaned up.
 - **Interruption Recovery on Startup:** If the application terminates or is killed by the OS during an active upload (leaving mutations in `PROCESSING`), `recoverInterruptedMutations` queries the server on app reboot. If the remote version indicates the server write succeeded before local acknowledgement, the mutation is cleanly acknowledged. If not, it is safely reset to `ENQUEUED` for idempotent retry.
 - **Bounded Backoff & Error Classification:** Transient network failures trigger bounded exponential backoff ($500\text{ ms} \times 2^{\text{retry}} + \text{jitter}$, max 30s). Permanent failures (`42501 Unauthorized`) transition immediately to `PERMANENTLY_FAILED`, preventing infinite retry loops.
 
 ### 7.6 Android Hardware Keystore & Physical Device Reality
 - **Physical Hardware Verification Status:** `NOT TESTED (SIMULATOR / MOCK ENVIRONMENT)`. In this automated build environment, no physical Android device is connected (`adb devices` returned empty). While Expo SecureStore delegates to Android Keystore (`EncryptedSharedPreferences`), hardware-backed TEE/StrongBox enforcement (`KeyProperties.SECURITY_LEVEL_STRONGBOX`) and hardware key invalidation cannot be claimed without physical device probe testing.
-- **Biometric Enforcement Boundary:** Biometric unlock in `KeystoreService` is currently gated at the application software level via `expo-local-authentication` before retrieving the key from SecureStore.
+- **Biometric Enforcement Boundary:** Biometric unlock in `KeystoreService` is currently gated at the application software level via `expo-local-authentication` before retrieving the key from SecureStore, rather than Keystore-level biometric authorization flags (`setUserAuthenticationRequired(true)`).
+- **Android Auto Backup Disabled:** Explicitly disabled in `app.json` (`"allowBackup": false`) to prevent cloud backup restoration on new devices without hardware Keystore master keys.
 
 ### 7.7 JavaScript Memory Lifetime & Best-Effort Zeroization
 - **ArrayBuffer Zeroization:** Raw cryptographic keys stored in `Uint8Array` are explicitly zeroized using `zeroMemory()` (`buffer.fill(0)`) upon vault locking or rotation.
@@ -172,8 +179,8 @@ To completely evict a compromised hardware device holding $K_v$, a full Vault Ke
 | :--- | :--- | :--- | :--- |
 | **1. Encryption** | AES-256-GCM with fresh 96-bit nonces & AAD | **VERIFIED** | Verified in `vault.test.ts` & `syncService.test.ts`. Nonce collision tests pass. |
 | **2. Key Management** | 256-bit CSPRNG Vault Key, dual Argon2id wrap | **VERIFIED** | Verified in `recovery.test.ts` & `kdf.test.ts`. Zero plaintext key transmission. |
-| **3. Key Rotation** | Two-phase recoverable $K_v \to K_v'$ rotation with on-disk manifest | **VERIFIED** | Verified in `keyRotation.test.ts` & `vaultService.ts`. Manifest crash recovery tested. |
-| **4. Queue Durability** | Crash-safe persistent WAL queue with mutex, checksums & `.bak` | **VERIFIED** | Verified in `queueCrashRecovery.test.ts` & `queueService.ts`. Auto-repair verified. |
+| **3. Key Rotation** | Atomic PostgreSQL rotation (`sync_rotate_vault`) + Keystore staging | **VERIFIED** | Verified in `keyRotation.test.ts` & `live_integration.test.js` (Test 6.6-6.8). |
+| **4. Queue Durability** | Mutex serialization, Keystore HMAC-SHA256 & safe `.bak` rotation | **VERIFIED** | Verified in `queueCrashRecovery.test.ts` & `queueService.ts`. Auto-repair verified. |
 | **5. CAS Concurrency** | Atomic CAS with `unique_violation` insertion race fix | **VERIFIED** | Verified in `live_integration.test.js` (Test 6.1-6.5) & `rls.test.js`. |
 | **6. Row-Level Security** | PostgreSQL RLS enabled & forced on all tables | **VERIFIED** | Verified in `rls.test.js` & `live_integration.test.js` (cross-tenant 0 rows). |
 | **7. Device Revocation** | Revocation cuts cloud query access + documented rotation | **VERIFIED** | Verified in `live_integration.test.js` (device deletion confirmed). |
@@ -181,10 +188,10 @@ To completely evict a compromised hardware device holding $K_v$, a full Vault Ke
 | **9. Hardware Keystore** | Android Keystore / StrongBox physical device probe | **NOT TESTED** | Absence of physical device in automated sandbox. Documented as limitation. |
 | **10. Memory Zeroing** | Best-effort ArrayBuffer wiping upon vault lock | **VERIFIED** | Verified in `vault.test.ts` (`zeroMemory` fills Uint8Array with 0). |
 | **11. Privacy** | `FLAG_SECURE` screen privacy & clipboard purging | **VERIFIED** | Verified in `app/_layout.tsx` & `index.tsx` (30s auto-purge). |
-| **12. Permissions** | Minimal permissions (CAMERA, BIOMETRIC; AUDIO blocked) | **VERIFIED** | Verified via `npx expo config --type prebuild` (`RECORD_AUDIO` blocked). |
+| **12. Permissions** | Minimal permissions (CAMERA, BIOMETRIC; AUDIO blocked, Backup disabled) | **VERIFIED** | Verified via `npx expo config --type prebuild` (`RECORD_AUDIO` blocked, `allowBackup: false`). |
 | **13. Dependencies** | Zero runtime high/critical vulnerabilities | **VERIFIED** | Verified via `npm audit --omit=dev`. |
 | **14. Release Signing** | EAS build profiles configured for APK & AAB | **VERIFIED** | Verified in `eas.json` (preview APK, production AAB). |
 
 > [!IMPORTANT]
 > **Release Gate Classification: CONDITIONALLY READY**
-> NYX meets all architectural, cryptographic, and backend concurrency requirements with 87 passing frontend tests and 17 backend security suites. Final promotion to general release is gated on physical Android device verification and formal third-party penetration testing.
+> NYX meets all architectural, cryptographic, and backend concurrency requirements with 94 passing frontend tests and 18 backend security suites. Final promotion to general release is gated on physical Android device verification and formal third-party penetration testing.

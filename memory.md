@@ -2,8 +2,8 @@
 
 ## 1. Project Overview & Current Phase
 - **Project:** NYX Authenticator (Android-first offline, client-side encrypted TOTP vault)
-- **Active Development Phase:** Phase 8 (Final Android Validation, Recovery Assurance & Beta Release Gate) Completed.
-- **Current Milestone:** Milestone 2.1 (Beta Release Gate complete: hardened queue mutex serialization, journal integrity checksums & backup auto-repair, crash-recoverable two-phase vault key rotation manifest, 87 passing frontend tests, 17 backend security suites, and independent release readiness audit).
+- **Active Development Phase:** Phase 9 (Adversarial Recovery Audit, Key Rotation Integrity & Release Validation) Completed.
+- **Current Milestone:** Milestone 2.2 (Adversarial audit complete: atomic PostgreSQL vault rotation procedure `sync_rotate_vault`, zero plaintext keys in manifest with Keystore staging key and AES-GCM wrapping, device-bound Keystore-keyed HMAC-SHA256 queue integrity, safe backup rotation, 94 passing frontend tests, 18 backend security suites, and evidence-based conditional release gate).
 
 ---
 
@@ -58,6 +58,21 @@ An independent audit was conducted across cryptography, database RLS, and fronte
 16. **[SEC-016 - Medium] EAS Project ID Authorization Collision:**
     - *Finding:* EAS project ID `0a58fd2d-3c2f-485d-8dd9-44b3ebc38a11` returns 403 Forbidden for the active developer account `tushardevx01` (`thetushardev0@gmail.com`).
     - *Remediation:* Documented EAS entity authorization status and runbook in `DEVELOPMENT.md`. Retained project ID per repository invariants without unauthorized overwriting.
+17. **[SEC-017 - Critical] Partial Cloud Commit Vulnerability in Key Rotation:**
+    - *Finding:* Pushing re-encrypted accounts in a client-side loop allowed intermediate network errors or process termination to leave some accounts in Supabase encrypted under $K_v'$ and others under $K_v$, while discarding the manifest reverted the client to $K_v$.
+    - *Remediation:* Authored and deployed migration `20261123000005_atomic_vault_rotation.sql` implementing `sync_rotate_vault`, which atomically migrates the vault envelope and all re-encrypted accounts in a single PostgreSQL transaction with `FOR UPDATE` row locking. Eliminates partial cloud-commit states entirely.
+18. **[SEC-018 - Critical] Staged Vault Key Plaintext Exposure in Manifest:**
+    - *Finding:* `newVaultKeyBase64` was previously stored in plaintext JSON in `nyx_rotation_manifest_v1.json` on application storage.
+    - *Remediation:* Eliminated plaintext keys from disk. Staged keys are now stored in hardware-backed Android Keystore (`nyx_staging_vault_key_v1`) and encrypted under `oldVaultKey` in `nyx_rotation_manifest_v2.json`.
+19. **[SEC-019 - High] Lack of Cryptographic Integrity in Mutation Queue:**
+    - *Finding:* Simple DJB2 string checksums provided no cryptographic integrity or tamper resistance against sandbox filesystem modification.
+    - *Remediation:* Implemented device-bound Keystore-keyed HMAC-SHA256 (`getQueueHmacKey`) integrity authentication in `QueueJournalEnvelope`.
+20. **[SEC-020 - High] Unprotected Backup Journal Overwrite:**
+    - *Finding:* Corrupted primary journal files could potentially overwrite valid `.bak` backup files during rotation.
+    - *Remediation:* Added validation check ensuring the primary journal is confirmed valid before rotating to backup.
+21. **[SEC-021 - Medium] Android Auto Backup Enabled Without Keystore Restoration:**
+    - *Finding:* Default `allowBackup` could cause Android Auto Backup to upload encrypted files to Google Drive without hardware-backed Keystore keys.
+    - *Remediation:* Explicitly set `android.allowBackup: false` in `app.json`.
 
 ---
 
@@ -98,7 +113,7 @@ nyx/
 ---
 
 ## 5. Test Suite Verification Summary
-- **Frontend Test Suite:** 12 test suites, 87 tests passing (0 failures).
+- **Frontend Test Suite:** 12 test suites, 94 tests passing (0 failures).
   - `tests/core/totp/rfc6238.test.ts`: Official RFC 6238 vectors (SHA1, SHA256, SHA512), 6-digit & 8-digit codes, leading zeros.
   - `tests/core/totp/base32.test.ts`: Strict RFC 4648 Base32 validation and decoding.
   - `tests/core/totp/uri.test.ts`: Parsing and canonical serialization of `otpauth://` URIs.
@@ -108,10 +123,10 @@ nyx/
   - `tests/core/crypto/storage.test.ts`: Encrypted local persistence, corruption handling, and atomic writes.
   - `tests/services/syncService.test.ts`: AES-256-GCM cloud encryption, AAD validation, deterministic conflict reconciliation (preserving forked copies), tombstone anti-resurrection, delete-vs-update zero data loss, and multi-device bidirectional synchronization simulation.
   - `tests/services/deviceService.test.ts`: Persistent UUID generation and device label management.
-  - `tests/services/queueCrashRecovery.test.ts`: Crash-safe persistent WAL queue, 5-stage state machine, process crash recovery during active upload, remote write status reconciliation, bounded exponential backoff with jitter, async mutex serialization (`runExclusive`), journal schema versioning with SHA-256 checksums, automatic backup journal (`.bak`) recovery, and corrupted journal archiving.
-  - `tests/services/keyRotation.test.ts`: Two-phase Master Vault Key Rotation ($K_v \to K_v'$), pre-flight decryption verification, re-encryption of accounts with fresh nonces, Argon2id re-wrapping, on-disk rotation manifest lifecycle (`PREPARED` -> `CLOUD_COMMITTED` -> `COMPLETED`), transactional cloud envelope update, startup crash recovery (`recoverInterruptedRotation`), and local Keystore re-binding.
+  - `tests/services/queueCrashRecovery.test.ts`: Crash-safe persistent queue, 5-stage state machine, process crash recovery during active upload, remote write status reconciliation, bounded exponential backoff with jitter, async mutex serialization (`runExclusive`), journal schema versioning with Keystore-keyed HMAC-SHA256 authentication, safe backup journal (`.bak`) recovery, and corrupted journal archiving.
+  - `tests/services/keyRotation.test.ts`: Master Vault Key Rotation ($K_v \to K_v'$), pre-flight decryption verification, staged key confidentiality (zero plaintext keys on disk, Keystore staging slot and AES-GCM wrapping), atomic PostgreSQL transaction procedure (`sync_rotate_vault`), on-disk rotation manifest lifecycle (`PREPARED` -> `COMMITTED`), startup crash recovery (`recoverInterruptedRotation`), and local Keystore re-binding.
   - `tests/performance.test.ts`: 100 & 500 account TOTP calculation latency (< 0.25ms/code), 500-account vault encryption/decryption scaling, 64MB Argon2id profiling, and reconciler scalability.
-- **Backend Test Suite:** 7 security assertion suites passing.
+- **Backend Test Suite:** 8 security assertion suites passing.
   - RLS unconditionally enabled and forced across `profiles`, `vaults`, `authenticator_accounts`, and `devices`.
   - Authenticated policies for SELECT, INSERT, UPDATE, DELETE.
   - Cross-tenant vault ownership validation (`auth.uid() = vault.user_id`).
@@ -119,20 +134,24 @@ nyx/
   - Device metadata tracking (`last_active_at`, `device_label`).
   - Atomic Compare-And-Swap (CAS) stored procedure definition with `FOR UPDATE` locking and `unique_violation` insertion race handlers (Migration `20261123000004_safe_concurrent_cas.sql`).
   - CAS concurrency simulator verified: exact version matches required, race conditions eliminated, soft-delete resurrection blocked.
+  - Atomic vault rotation procedure `sync_rotate_vault` defined with transactional account & envelope update (Migration `20261123000005_atomic_vault_rotation.sql`).
 - **Live Supabase Cloud Integration Suite:** 10 suites passing against live endpoint `https://ardomiwuahiottpkotmv.supabase.co`.
   - Pre-confirmed test identity registration and authentic JWT session establishment.
   - Argon2id wrapped vault record creation with RLS.
   - Device registration and device label audit.
   - Client-side AES-256-GCM encrypted account upload with CAS.
   - Zero-knowledge database verification (zero plaintext metadata stored on Supabase).
-  - 7-Point CAS & Database Security Test Matrix:
+  - 10-Point CAS, Database Security & Atomic Rotation Test Matrix:
     1. Simultaneous inserts with same UUID (handled via `unique_violation` trapping -> `23514`).
     2. Simultaneous updates with same expected version (rejected with `23514`).
     3. Stale update after successful write (rejected with `23514`).
     4. Cross-user vault access blocked with `42501 Unauthorized`.
     5. Cross-vault account mutation blocked with `42501 Unauthorized`.
-    6. Guard against accidental tombstone resurrection (rejected with `23514`).
-    7. Unauthenticated RPC execution blocked with `42501`.
+    6. Atomic vault rotation procedure `sync_rotate_vault` verified (migrated envelope and accounts in a single transaction).
+    7. Concurrency conflict on stale rotation batch rejected with `23514`.
+    8. Cross-user authorization guard on rotation blocked with `42501 Unauthorized`.
+    9. Guard against accidental tombstone resurrection (rejected with `23514`).
+    10. Unauthenticated RPC execution blocked with `42501`.
   - Tombstone soft-deletion propagation at Version 3.
   - Device revocation (device removed from registry).
   - Cross-tenant RLS policy isolation (User B completely barred from User A data).

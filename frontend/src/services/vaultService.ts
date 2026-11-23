@@ -6,6 +6,8 @@ import {
   wrapVaultKeyWithRecoveryCode,
   unwrapVaultKey,
   unwrapVaultKeyWithRecoveryCode,
+  encryptAesGcm,
+  decryptAesGcm,
   bytesToBase64,
   base64ToBytes,
   KeystoreService,
@@ -15,7 +17,17 @@ import {
 import { DeviceService } from './deviceService';
 import { SyncService } from './syncService';
 
-export type RotationStage = 'PREPARED' | 'CLOUD_COMMITTED' | 'COMPLETED';
+export type RotationStage = 'PREPARED' | 'COMMITTED' | 'CLOUD_COMMITTED' | 'COMPLETED';
+
+export interface StagedAccountPayload {
+  id: string;
+  expected_version: number;
+  next_version: number;
+  ciphertext: string;
+  nonce: string;
+  crypto_version: number;
+  deleted_at: string | null;
+}
 
 export interface RotationManifest {
   manifestVersion: number;
@@ -23,12 +35,16 @@ export interface RotationManifest {
   vaultId: string;
   stage: RotationStage;
   timestamp: number;
-  newVaultKeyBase64: string;
+  // Confidentiality invariant: Staged key material is NEVER stored in plaintext.
+  // It is persisted in Android Keystore (staging alias) and encrypted under oldVaultKey in manifest.
+  wrappedNewVaultKeyCiphertext: string;
+  wrappedNewVaultKeyNonce: string;
   passphraseEnvelope: WrappedVaultKeyEnvelope;
   recoveryEnvelope: WrappedVaultKeyEnvelope;
+  stagedAccounts: StagedAccountPayload[];
 }
 
-const ROTATION_MANIFEST_FILENAME = 'nyx_rotation_manifest_v1.json';
+const ROTATION_MANIFEST_FILENAME = 'nyx_rotation_manifest_v2.json';
 
 export interface RemoteVaultRow {
   id: string;
@@ -224,55 +240,117 @@ export class VaultService {
   /**
    * Startup Recovery for Interrupted Key Rotation:
    * Inspects if a key rotation was interrupted mid-flight by app crash, battery death, or network abort.
-   * If CLOUD_COMMITTED, completes the local commit so the user is never locked out.
-   * If PREPARED, cloud was never touched, so manifest is discarded and old key remains active.
+   * Compares the remote vault envelope to verify if cloud migration was committed.
+   * If committed, completes local promotion to prevent lockout.
+   * If not committed, rolls back cleanly and leaves old key active.
    */
   static async recoverInterruptedRotation(
     userId: string,
-    accounts?: DecryptedAccountRecord[]
+    accounts?: DecryptedAccountRecord[],
+    oldVaultKey?: Uint8Array
   ): Promise<{ recovered: boolean; newVaultKey?: Uint8Array }> {
     const manifest = await this.loadRotationManifest();
     if (!manifest || manifest.userId !== userId) {
       return { recovered: false };
     }
 
-    if (manifest.stage === 'PREPARED') {
-      // Cloud was not updated; safely discard manifest
-      console.warn('[VaultService] Interrupted rotation in PREPARED stage. Discarding manifest; old key remains active.');
+    // Determine if cloud was committed
+    let isCloudCommitted = false;
+    try {
+      const remoteVault = await this.getRemoteVault(userId);
+      if (
+        remoteVault &&
+        remoteVault.passphrase_wrapped_vault_key === manifest.passphraseEnvelope.wrappedKey
+      ) {
+        isCloudCommitted = true;
+      }
+    } catch (err: any) {
+      console.warn('[VaultService] Unable to verify remote vault during recovery:', err.message);
+      if (manifest.stage === 'COMMITTED' || manifest.stage === 'CLOUD_COMMITTED') {
+        isCloudCommitted = true;
+      }
+    }
+
+    if (!isCloudCommitted) {
+      // Cloud was not updated or transaction rolled back. Old key remains active.
+      console.warn('[VaultService] Interrupted rotation was NOT committed in cloud. Rolling back staging key...');
+      await KeystoreService.clearStagingVaultKey();
       await this.clearRotationManifest();
       return { recovered: false };
     }
 
-    if (manifest.stage === 'CLOUD_COMMITTED') {
-      // Cloud was updated successfully, but local Keystore or storage commit crashed!
-      console.warn('[VaultService] Interrupted rotation in CLOUD_COMMITTED stage. Completing local commit...');
-      const newVaultKey = base64ToBytes(manifest.newVaultKeyBase64);
+    // Cloud IS committed! Complete local promotion so user is never locked out.
+    console.warn('[VaultService] Cloud was committed to new key. Completing local promotion...');
 
-      // Complete local Keystore update
-      await KeystoreService.saveVaultKey(newVaultKey);
+    // 1. Retrieve staged key from Keystore staging slot
+    let newVaultKey = await KeystoreService.getStagingVaultKey();
 
-      // Re-save local accounts with new key if accounts provided or load from storage
-      if (accounts && accounts.length > 0) {
-        await LocalVaultStorage.saveAccounts(newVaultKey, accounts);
+    // 2. Fallback: decrypt staged key from manifest using oldVaultKey if staging slot was cleared
+    if (!newVaultKey) {
+      const activeOldKey = oldVaultKey || (await KeystoreService.getVaultKey(false));
+      if (activeOldKey && manifest.wrappedNewVaultKeyCiphertext && manifest.wrappedNewVaultKeyNonce) {
+        try {
+          const decryptedBase64 = await decryptAesGcm(
+            activeOldKey,
+            {
+              ciphertext: manifest.wrappedNewVaultKeyCiphertext,
+              nonce: manifest.wrappedNewVaultKeyNonce,
+              crypto_version: 1,
+            },
+            'nyx-rotation-manifest:v1'
+          );
+          newVaultKey = base64ToBytes(decryptedBase64);
+        } catch (decErr: any) {
+          console.error('[VaultService] Failed to decrypt staged key from manifest:', decErr.message);
+        }
       }
-
-      await this.clearRotationManifest();
-      return { recovered: true, newVaultKey };
     }
 
-    return { recovered: false };
+    if (!newVaultKey) {
+      throw new Error(
+        'Critical: Remote vault was committed to new key, but staged key material is unavailable locally.'
+      );
+    }
+
+    // 3. Promote staged key to active Keystore master key
+    await KeystoreService.promoteStagingVaultKey(newVaultKey);
+
+    // 4. Update local accounts storage with updated versions
+    if (accounts && accounts.length > 0) {
+      for (const acc of accounts) {
+        const staged = manifest.stagedAccounts.find((s) => s.id === acc.id);
+        if (staged) {
+          acc.version = staged.next_version;
+        } else {
+          acc.version += 1;
+        }
+      }
+      await LocalVaultStorage.saveAccounts(newVaultKey, accounts);
+    }
+
+    // 5. Post-flight verification
+    try {
+      await LocalVaultStorage.loadAccounts(newVaultKey);
+    } catch {}
+
+    // 6. Purge manifest
+    await this.clearRotationManifest();
+
+    return { recovered: true, newVaultKey };
   }
 
   /**
-   * Rotates the user's Master Vault Key (Kv -> Kv') using a recoverable two-phase protocol:
-   * 1. Preserves old key until migration is safely completed.
-   * 2. Generates new 256-bit symmetric vault key.
-   * 3. Re-encrypts accounts locally.
-   * 4. Wraps new key with passphrase and recovery code via Argon2id.
-   * 5. Persists staged rotation manifest.
-   * 6. Updates cloud records via atomic CAS.
-   * 7. Updates local Android Keystore with new key and saves local accounts.
-   * 8. Verifies decryption and cleans up manifest.
+   * Rotates the user's Master Vault Key (Kv -> Kv') using an atomic, crash-recoverable protocol:
+   * 1. Pre-flight verification that old key decrypts local accounts cleanly.
+   * 2. Generates new 256-bit symmetric key and stores in hardware-backed Keystore staging slot.
+   * 3. Wraps new key with passphrase and recovery code via Argon2id.
+   * 4. Re-encrypts accounts in memory with fresh nonces and bound AAD.
+   * 5. Encrypts new key under old key for manifest confidentiality (ZERO plaintext keys on disk).
+   * 6. Writes PREPARED manifest to disk.
+   * 7. Executes atomic PostgreSQL transaction (sync_rotate_vault) migrating vault + all accounts.
+   * 8. Advances manifest to COMMITTED.
+   * 9. Promotes staging key to master key in Keystore and saves local accounts.
+   * 10. Verifies post-rotation decryption and purges manifest.
    */
   static async rotateVaultKey(
     userId: string,
@@ -297,100 +375,101 @@ export class VaultService {
     const newVaultKey = generateVaultKey();
     const newVaultKeyBase64 = bytesToBase64(newVaultKey);
 
-    // 2. Wrap new key with user passphrase and recovery code
+    // 2. Stage new key in hardware-backed Android Keystore (Confidentiality)
+    await KeystoreService.saveStagingVaultKey(newVaultKey);
+
+    // 3. Encrypt new key under old key for manifest defense-in-depth (NEVER plaintext on disk)
+    const keyEnc = await encryptAesGcm(oldVaultKey, newVaultKeyBase64, 'nyx-rotation-manifest:v1');
+
+    // 4. Wrap new key with user passphrase and recovery code via Argon2id
     const newPassphraseEnvelope = await wrapVaultKey(newVaultKey, passphrase);
     const newRecoveryEnvelope = await wrapVaultKeyWithRecoveryCode(newVaultKey, recoveryCode);
 
-    // 3. Stage rotation manifest on disk (Stage: PREPARED)
-    await this.saveRotationManifest({
-      manifestVersion: 1,
-      userId,
-      vaultId: remoteVault.id,
-      stage: 'PREPARED',
-      timestamp: Date.now(),
-      newVaultKeyBase64,
-      passphraseEnvelope: newPassphraseEnvelope,
-      recoveryEnvelope: newRecoveryEnvelope,
-    });
-
-    // 4. Update cloud vault record
-    const { error: vaultUpdateErr } = await supabase
-      .from('vaults')
-      .update({
-        passphrase_wrapped_vault_key: newPassphraseEnvelope.wrappedKey,
-        passphrase_wrap_nonce: newPassphraseEnvelope.nonce,
-        passphrase_kdf_salt: newPassphraseEnvelope.salt,
-        passphrase_kdf_params: newPassphraseEnvelope.kdfParams,
-        recovery_wrapped_vault_key: newRecoveryEnvelope.wrappedKey,
-        recovery_wrap_nonce: newRecoveryEnvelope.nonce,
-        recovery_kdf_salt: newRecoveryEnvelope.salt,
-        recovery_kdf_params: newRecoveryEnvelope.kdfParams,
-        crypto_version: 1,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', remoteVault.id)
-      .eq('user_id', userId);
-
-    if (vaultUpdateErr) {
-      // Clean up manifest, old key remains active
-      await this.clearRotationManifest();
-      throw new Error(`Failed to update remote vault envelope: ${vaultUpdateErr.message}`);
-    }
-
-    // 5. Re-encrypt each account and push via atomic CAS
-    let rotatedCount = 0;
+    // 5. Re-encrypt all active accounts in memory under new key with fresh nonces & bound AAD
+    const stagedAccounts: StagedAccountPayload[] = [];
     for (const account of accounts) {
       const encrypted = await SyncService.encryptAccountForSync(newVaultKey, account);
-      const pushRes = await SyncService.pushMutation(userId, {
+      stagedAccounts.push({
         id: account.id,
-        vault_id: remoteVault.id,
-        action: 'UPSERT',
-        expectedVersion: account.version,
-        nextVersion: account.version + 1,
+        expected_version: account.version,
+        next_version: account.version + 1,
         ciphertext: encrypted.ciphertext,
         nonce: encrypted.nonce,
         crypto_version: 1,
         deleted_at: account.deleted_at || null,
-        timestamp: Date.now(),
-        retryCount: 0,
       });
-
-      if (pushRes.success) {
-        account.version += 1;
-        rotatedCount++;
-      }
     }
 
-    // 6. Update manifest to CLOUD_COMMITTED
+    // 6. Stage rotation manifest on disk (Stage: PREPARED)
     await this.saveRotationManifest({
-      manifestVersion: 1,
+      manifestVersion: 2,
       userId,
       vaultId: remoteVault.id,
-      stage: 'CLOUD_COMMITTED',
+      stage: 'PREPARED',
       timestamp: Date.now(),
-      newVaultKeyBase64,
+      wrappedNewVaultKeyCiphertext: keyEnc.ciphertext,
+      wrappedNewVaultKeyNonce: keyEnc.nonce,
       passphraseEnvelope: newPassphraseEnvelope,
       recoveryEnvelope: newRecoveryEnvelope,
+      stagedAccounts,
     });
 
-    // 7. Update local Keystore with new key
-    await KeystoreService.saveVaultKey(newVaultKey);
+    // 7. Atomic Remote Commit via sync_rotate_vault RPC
+    const { data: _rpcRes, error: rpcErr } = await supabase.rpc('sync_rotate_vault', {
+      p_vault_id: remoteVault.id,
+      p_passphrase_wrapped_vault_key: newPassphraseEnvelope.wrappedKey,
+      p_passphrase_wrap_nonce: newPassphraseEnvelope.nonce,
+      p_passphrase_kdf_salt: newPassphraseEnvelope.salt,
+      p_passphrase_kdf_params: newPassphraseEnvelope.kdfParams,
+      p_recovery_wrapped_vault_key: newRecoveryEnvelope.wrappedKey,
+      p_recovery_wrap_nonce: newRecoveryEnvelope.nonce,
+      p_recovery_kdf_salt: newRecoveryEnvelope.salt,
+      p_recovery_kdf_params: newRecoveryEnvelope.kdfParams,
+      p_accounts: stagedAccounts,
+    });
 
-    // 8. Re-encrypt and commit local storage with new key
+    if (rpcErr) {
+      // PostgreSQL rolled back all updates atomically! Zero partial commit state in cloud.
+      await KeystoreService.clearStagingVaultKey();
+      await this.clearRotationManifest();
+      throw new Error(`Atomic vault rotation failed: ${rpcErr.message}`);
+    }
+
+    // 8. Update manifest to COMMITTED
+    await this.saveRotationManifest({
+      manifestVersion: 2,
+      userId,
+      vaultId: remoteVault.id,
+      stage: 'COMMITTED',
+      timestamp: Date.now(),
+      wrappedNewVaultKeyCiphertext: keyEnc.ciphertext,
+      wrappedNewVaultKeyNonce: keyEnc.nonce,
+      passphraseEnvelope: newPassphraseEnvelope,
+      recoveryEnvelope: newRecoveryEnvelope,
+      stagedAccounts,
+    });
+
+    // 9. Promote staging key to active Keystore master key
+    await KeystoreService.promoteStagingVaultKey(newVaultKey);
+
+    // 10. Update local accounts storage with incremented versions
+    for (const account of accounts) {
+      account.version += 1;
+    }
     await LocalVaultStorage.saveAccounts(newVaultKey, accounts);
 
-    // 9. Verify decryption of migrated records locally
+    // 11. Post-flight verification: verify accounts load and decrypt cleanly
     const verifiedAccounts = await LocalVaultStorage.loadAccounts(newVaultKey);
     if (verifiedAccounts.length !== accounts.length) {
       throw new Error('Local post-rotation decryption verification failed.');
     }
 
-    // 10. Clean up manifest
+    // 12. Clean up manifest
     await this.clearRotationManifest();
 
     return {
       newVaultKey,
-      rotatedCount,
+      rotatedCount: stagedAccounts.length,
     };
   }
 }

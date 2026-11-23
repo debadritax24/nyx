@@ -95,8 +95,9 @@ Implemented in `backend/tests/live_integration.test.js`:
 ### 6.2 Offline Queue Durability & Crash Recovery Suite
 Executed by `npm --prefix frontend test -- tests/services/queueCrashRecovery.test.ts`:
 - Tests atomic Write-Ahead Journaling (`nyx_mutation_queue_v1.journal`) state machine transitions with mutex serialization (`runExclusive`).
-- Tests journal schema versioning (`schemaVersion: 1`) and SHA-256 integrity checksum calculation.
-- Tests backup journal rotation (`nyx_mutation_queue_v1.journal.bak`) and automatic corruption recovery repairing the primary journal.
+- Tests journal schema versioning (`schemaVersion: 1`) and Keystore-keyed HMAC-SHA256 authentication (`nyx_queue_hmac_key_v1`).
+- Tests HMAC tamper resistance: tampering with journal payload, checksum, or schema version immediately causes verification failure and triggers corrupted archive creation.
+- Tests safe backup rotation: verifies existing primary journal validity prior to rotating to `.bak`, ensuring corrupted primary journals never destroy valid backups.
 - Tests corrupted journal archiving (`nyx_mutation_queue_v1.journal.corrupted.<timestamp>`) when both primary and backup files are invalid.
 - Tests concurrent mutation serialization ensuring zero lost writes under heavy concurrent enqueues.
 - Tests folding intermediate un-sent edits for the same account to prevent queue bloat.
@@ -106,16 +107,17 @@ Executed by `npm --prefix frontend test -- tests/services/queueCrashRecovery.tes
 - Tests bounded exponential backoff with randomized jitter on transient network errors.
 - Tests immediate non-retryable transition to `PERMANENTLY_FAILED` on authorization errors (e.g. `42501`).
 
-### 6.3 Two-Phase Master Vault Key Rotation Suite
+### 6.3 Master Vault Key Rotation & Confidentiality Suite
 Executed by `npm --prefix frontend test -- tests/services/keyRotation.test.ts`:
 - Tests pre-flight decryption check: aborts rotation without side effects if active key cannot decrypt local accounts.
 - Tests generation of fresh 256-bit symmetric vault key ($K_v'$).
-- Tests re-encryption of all account records with fresh nonces and bound AAD.
-- Tests Argon2id re-wrapping of new key under passphrase and recovery code.
-- Tests atomic on-disk `RotationManifest` lifecycle (`PREPARED` -> `CLOUD_COMMITTED` -> `COMPLETED`).
-- Tests transactional cloud update via atomic CAS and local Keystore update.
+- Tests manifest key confidentiality: asserts that neither $K_v$ nor $K_v'$ is ever written to disk in plaintext (`nyx_rotation_manifest_v2.json` contains only AES-256-GCM ciphertext wrapped under $K_v$).
+- Tests Keystore staging lifecycle: verifies $K_v'$ is stored in `nyx_staging_vault_key_v1` and promoted to `nyx_vault_key_v1` only upon completion.
+- Tests atomic cloud rotation: verifies `sync_rotate_vault` updates the envelope and accounts atomically.
+- Tests atomic rotation rollback: verifies that if `sync_rotate_vault` fails or network drops, local storage remains on $K_v$, the Keystore staging key is cleared, and the manifest is deleted.
 - Tests crash recovery (`recoverInterruptedRotation`):
-  - Recovers and commits $K_v'$ if app crashes after `CLOUD_COMMITTED`.
+  - Recovers and commits $K_v'$ if app crashes after cloud commit.
+  - Recovers $K_v'$ even if Keystore staging was wiped, using the wrapped ciphertext in the manifest.
   - Discards manifest safely keeping $K_v$ active if app crashes during `PREPARED`.
 - Tests unwrap verification with both passphrase and recovery code.
 - Verifies that old key $K_v$ can no longer decrypt newly re-encrypted records.

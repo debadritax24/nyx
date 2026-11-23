@@ -17,6 +17,7 @@
       "supportsTablet": false
     },
     "android": {
+      "allowBackup": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B0E14"
@@ -46,7 +47,8 @@
           "faceIDPermission": "Allow NYX to use biometric authentication to unlock your vault."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true
