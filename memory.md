@@ -3,7 +3,7 @@
 ## 1. Project Overview & Current Phase
 - **Project:** NYX Authenticator (Android-first offline, client-side encrypted TOTP vault)
 - **Active Development Phase:** Hermes Engine Compatibility & Unified Root Architecture Completed.
-- **Current Milestone:** Unified single-root Expo + Supabase layout, ratcheted SHA-512 CSPRNG entropy pool and native `expo-crypto` integration, pure JavaScript RFC 9106 Argon2id execution via `@noble/hashes` on Hermes engine, pure JavaScript AES-256-GCM via `node-forge` (zero fallback invariant strictly preserved), 12 passing Jest test suites (97 tests), 8 backend security assertion suites, and 10 live Supabase cloud integration tests.
+- **Current Milestone:** Unified single-root Expo + Supabase layout, ratcheted SHA-512 CSPRNG entropy pool and native `expo-crypto` integration, pure JavaScript RFC 9106 Argon2id execution via `@noble/hashes` on Hermes engine, pure JavaScript AES-256-GCM via `node-forge`, Android atomic file replacement resiliency (zero fallback invariant strictly preserved), 12 passing Jest test suites (97 tests), 8 backend security assertion suites, and 10 live Supabase cloud integration tests.
 
 ---
 

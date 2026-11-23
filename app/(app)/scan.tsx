@@ -18,8 +18,17 @@ export default function ScanScreen() {
     if (scanned) return;
     setScanned(true);
 
+    let parsed;
     try {
-      const parsed = parseTotpUri(data);
+      parsed = parseTotpUri(data);
+    } catch (parseErr: any) {
+      Alert.alert('Invalid QR Code', parseErr.message || 'QR code is not a valid TOTP URI', [
+        { text: 'Try Again', onPress: () => setScanned(false) },
+      ]);
+      return;
+    }
+
+    try {
       await addAccount({
         issuer: parsed.issuer,
         account_name: parsed.account,
@@ -34,8 +43,8 @@ export default function ScanScreen() {
         `Successfully registered ${parsed.issuer} (${parsed.account})`,
         [{ text: 'View Codes', onPress: () => router.replace('/(app)') }]
       );
-    } catch (err: any) {
-      Alert.alert('Invalid QR Code', err.message || 'QR code is not a valid TOTP URI', [
+    } catch (storageErr: any) {
+      Alert.alert('Registration Failed', storageErr.message || 'Could not save account to local vault', [
         { text: 'Try Again', onPress: () => setScanned(false) },
       ]);
     }

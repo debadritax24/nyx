@@ -46,7 +46,21 @@ export class LocalVaultStorage {
       await FileSystem.writeAsStringAsync(tempPath, fileContent, {
         encoding: FileSystem.EncodingType.UTF8,
       });
-      await FileSystem.moveAsync({ from: tempPath, to: path });
+
+      // On Android, moveAsync fails if the destination file already exists.
+      // Remove destination file first if present, then attempt atomic move with direct-write fallback.
+      try {
+        const destInfo = await FileSystem.getInfoAsync(path);
+        if (destInfo.exists) {
+          await FileSystem.deleteAsync(path, { idempotent: true });
+        }
+        await FileSystem.moveAsync({ from: tempPath, to: path });
+      } catch {
+        await FileSystem.writeAsStringAsync(path, fileContent, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+        await FileSystem.deleteAsync(tempPath, { idempotent: true }).catch(() => {});
+      }
     } else {
       this.mockStorage = fileContent;
     }

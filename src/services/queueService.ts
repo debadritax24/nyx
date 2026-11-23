@@ -184,7 +184,18 @@ export class PersistentMutationQueue {
       }
 
       // 3. Atomically replace main journal
-      await FileSystem.moveAsync({ from: tempPath, to: path });
+      try {
+        const destInfo = await FileSystem.getInfoAsync(path);
+        if (destInfo.exists) {
+          await FileSystem.deleteAsync(path, { idempotent: true });
+        }
+        await FileSystem.moveAsync({ from: tempPath, to: path });
+      } catch {
+        await FileSystem.writeAsStringAsync(path, filePayload, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+        await FileSystem.deleteAsync(tempPath, { idempotent: true }).catch(() => {});
+      }
     } else {
       if (this.memoryJournal) {
         const isValid = (await this.parseAndValidateJournal(this.memoryJournal)) !== null;
