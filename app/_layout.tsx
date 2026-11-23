@@ -4,9 +4,27 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as ScreenCapture from 'expo-screen-capture';
+import * as Crypto from 'expo-crypto';
 import { useAuthStore } from '../src/store/authStore';
 import { useVaultStore } from '../src/store/vaultStore';
 import { Colors } from '../src/components/tokens';
+import '../src/core/crypto/vault'; // Initialize CSPRNG & WebCrypto polyfill
+
+// Polyfill globalThis.crypto on mobile platforms where WebCrypto getRandomValues is missing
+if (typeof globalThis !== 'undefined') {
+  if (!globalThis.crypto) {
+    (globalThis as any).crypto = {};
+  }
+  if (!globalThis.crypto.getRandomValues && typeof Crypto.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues = <T extends ArrayBufferView | null>(array: T): T => {
+      if (!array) return array;
+      return Crypto.getRandomValues(array as any) as any;
+    };
+  }
+  if (!globalThis.crypto.randomUUID && typeof Crypto.randomUUID === 'function') {
+    globalThis.crypto.randomUUID = () => Crypto.randomUUID() as `${string}-${string}-${string}-${string}-${string}`;
+  }
+}
 
 export default function RootLayout() {
   const initAuth = useAuthStore((state) => state.initAuth);

@@ -11,18 +11,80 @@ export function zeroMemory(buffer: Uint8Array): void {
 
 /**
  * Returns a cryptographically secure random buffer of specified byte length.
+ * Priority order:
+ * 1. expo-crypto (native Android/iOS SecureRandom implementation)
+ * 2. globalThis.crypto.getRandomValues (WebCrypto W3C standard)
+ * 3. Node.js crypto module (Jest / Node test execution environments)
  */
 export function getRandomBytes(length: number): Uint8Array {
-  const bytes = new Uint8Array(length);
-  if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.getRandomValues) {
+  // 1. Check expo-crypto (primary native CSPRNG on Android & iOS devices)
+  try {
+    const ExpoCrypto = require('expo-crypto');
+    if (ExpoCrypto) {
+      if (typeof ExpoCrypto.getRandomBytes === 'function') {
+        const bytes = ExpoCrypto.getRandomBytes(length);
+        if (bytes && bytes.length === length) {
+          return new Uint8Array(bytes);
+        }
+      }
+      if (typeof ExpoCrypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(length);
+        ExpoCrypto.getRandomValues(bytes);
+        return bytes;
+      }
+    }
+  } catch {
+    // expo-crypto not available in this environment
+  }
+
+  // 2. Check globalThis.crypto.getRandomValues (WebCrypto / polyfilled)
+  if (typeof globalThis !== 'undefined' && globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(length);
     globalThis.crypto.getRandomValues(bytes);
     return bytes;
   }
+
+  // 3. Check Node.js crypto module (Jest / Node runner)
   try {
     const nodeCrypto = require('crypto');
-    return new Uint8Array(nodeCrypto.randomBytes(length));
+    if (nodeCrypto && typeof nodeCrypto.randomBytes === 'function') {
+      return new Uint8Array(nodeCrypto.randomBytes(length));
+    }
   } catch {
-    throw new Error('No cryptographically secure random number generator available.');
+    // Node crypto not available
+  }
+
+  throw new Error('No cryptographically secure random number generator available.');
+}
+
+// Polyfill globalThis.crypto for any libraries expecting standard WebCrypto CSPRNG
+if (typeof globalThis !== 'undefined') {
+  if (!globalThis.crypto) {
+    (globalThis as any).crypto = {};
+  }
+  if (!globalThis.crypto.getRandomValues) {
+    globalThis.crypto.getRandomValues = <T extends ArrayBufferView | null>(array: T): T => {
+      if (!array) return array;
+      const uint8 = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+      const random = getRandomBytes(uint8.length);
+      uint8.set(random);
+      return array;
+    };
+  }
+  if (!globalThis.crypto.randomUUID) {
+    globalThis.crypto.randomUUID = (): `${string}-${string}-${string}-${string}-${string}` => {
+      try {
+        const ExpoCrypto = require('expo-crypto');
+        if (typeof ExpoCrypto.randomUUID === 'function') {
+          return ExpoCrypto.randomUUID();
+        }
+      } catch {}
+      const bytes = getRandomBytes(16);
+      bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4
+      bytes[8] = (bytes[8] & 0x3f) | 0x80; // Variant 10
+      const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}` as any;
+    };
   }
 }
 

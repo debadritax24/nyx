@@ -1,4 +1,4 @@
-import { bytesToBase64, base64ToBytes } from './vault';
+import { bytesToBase64, base64ToBytes, getRandomBytes } from './vault';
 
 const SECURE_STORE_VAULT_KEY_ALIAS = 'nyx_master_vault_key_v1';
 const SECURE_STORE_STAGING_KEY_ALIAS = 'nyx_staging_vault_key_v1';
@@ -179,13 +179,7 @@ export class KeystoreService {
 
     if (!key) {
       // Generate 256-bit cryptographically secure random key
-      const randomBytes = new Uint8Array(32);
-      if (globalThis.crypto?.getRandomValues) {
-        globalThis.crypto.getRandomValues(randomBytes);
-      } else {
-        for (let i = 0; i < 32; i++) randomBytes[i] = Math.floor(Math.random() * 256);
-      }
-      key = bytesToBase64(randomBytes);
+      key = bytesToBase64(getRandomBytes(32));
       (globalThis as any).__nyx_mock_queue_hmac = key;
       if (SecureStore && SecureStore.setItemAsync) {
         try {
