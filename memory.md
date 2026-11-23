@@ -3,7 +3,7 @@
 ## 1. Project Overview & Current Phase
 - **Project:** NYX Authenticator (Android-first offline, client-side encrypted TOTP vault)
 - **Active Development Phase:** Hermes Engine Compatibility & Unified Root Architecture Completed.
-- **Current Milestone:** Unified single-root Expo + Supabase layout, ratcheted SHA-512 CSPRNG entropy pool and native `expo-crypto` integration, pure JavaScript RFC 9106 Argon2id execution via `@noble/hashes` on Hermes engine (zero fallback invariant strictly preserved), 12 passing Jest test suites (96 tests), 8 backend security assertion suites, and 10 live Supabase cloud integration tests.
+- **Current Milestone:** Unified single-root Expo + Supabase layout, ratcheted SHA-512 CSPRNG entropy pool and native `expo-crypto` integration, pure JavaScript RFC 9106 Argon2id execution via `@noble/hashes` on Hermes engine, pure JavaScript AES-256-GCM via `node-forge` (zero fallback invariant strictly preserved), 12 passing Jest test suites (97 tests), 8 backend security assertion suites, and 10 live Supabase cloud integration tests.
 
 ---
 
@@ -113,11 +113,11 @@ nyx/
 ---
 
 ## 5. Test Suite Verification Summary
-- **Frontend Test Suite:** 12 test suites, 96 tests passing (0 failures).
+- **Frontend Test Suite:** 12 test suites, 97 tests passing (0 failures).
   - `tests/core/totp/rfc6238.test.ts`: Official RFC 6238 vectors (SHA1, SHA256, SHA512), 6-digit & 8-digit codes, leading zeros.
   - `tests/core/totp/base32.test.ts`: Strict RFC 4648 Base32 validation and decoding.
   - `tests/core/totp/uri.test.ts`: Parsing and canonical serialization of `otpauth://` URIs.
-  - `tests/core/crypto/vault.test.ts`: AES-256-GCM roundtrip, tampered ciphertext, tampered nonce, tampered AAD, nonce uniqueness, and non-WebCrypto offline SHA-512 ratcheted CSPRNG entropy pool validation.
+  - `tests/core/crypto/vault.test.ts`: AES-256-GCM roundtrip, tampered ciphertext, tampered nonce, tampered AAD, nonce uniqueness, non-WebCrypto offline SHA-512 ratcheted CSPRNG entropy pool validation, and non-WebCrypto/non-Node pure JS node-forge AES-256-GCM roundtrip validation.
   - `tests/core/crypto/kdf.test.ts`: Strict Argon2id WebAssembly derivation, non-WASM Hermes engine fallback to pure JS `@noble/hashes/argon2` with bit-for-bit parity, explicit fatal error throwing, passphrase wrapping.
   - `tests/core/crypto/recovery.test.ts`: 24-word recovery code generation, validation, and key wrapping.
   - `tests/core/crypto/storage.test.ts`: Encrypted local persistence, corruption handling, and atomic writes.

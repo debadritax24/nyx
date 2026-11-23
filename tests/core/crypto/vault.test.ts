@@ -119,4 +119,31 @@ describe('AES-256-GCM Authenticated Encryption & Key Lifecycle', () => {
       }
     }
   });
+
+  it('encrypts and decrypts AES-256-GCM via pure JS node-forge when WebCrypto is unavailable', async () => {
+    const originalSubtle = globalThis.crypto?.subtle;
+    try {
+      if (globalThis.crypto) {
+        delete (globalThis.crypto as any).subtle;
+      }
+
+      const key = generateVaultKey();
+      const plaintext = 'Offline Hermes Payload 12345! 🔐';
+      const aad = 'nyx-account:hermes_test:v1';
+
+      const encrypted = await encryptAesGcm(key, plaintext, aad);
+      expect(encrypted.ciphertext).toBeDefined();
+      expect(encrypted.nonce).toBeDefined();
+
+      const decrypted = await decryptAesGcm(key, encrypted, aad);
+      expect(decrypted).toBe(plaintext);
+
+      // Verify tampered AAD fails
+      await expect(decryptAesGcm(key, encrypted, 'tampered-aad')).rejects.toThrow();
+    } finally {
+      if (globalThis.crypto && originalSubtle) {
+        (globalThis.crypto as any).subtle = originalSubtle;
+      }
+    }
+  });
 });

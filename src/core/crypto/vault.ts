@@ -199,49 +199,82 @@ export async function encryptAesGcm(
   const plaintextBytes = new TextEncoder().encode(plaintext);
   const aadBytes = associatedData ? new TextEncoder().encode(associatedData) : undefined;
 
-  // 1. WebCrypto API
+  // 1. WebCrypto API (Browsers, Node with subtle crypto)
   if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle) {
-    const cryptoKey = await globalThis.crypto.subtle.importKey(
-      'raw',
-      keyBytes as unknown as BufferSource,
-      { name: 'AES-GCM' },
-      false,
-      ['encrypt']
-    );
+    try {
+      const cryptoKey = await globalThis.crypto.subtle.importKey(
+        'raw',
+        keyBytes as unknown as BufferSource,
+        { name: 'AES-GCM' },
+        false,
+        ['encrypt']
+      );
 
-    const ciphertextBuffer = await globalThis.crypto.subtle.encrypt(
-      {
-        name: 'AES-GCM',
-        iv: nonce as unknown as BufferSource,
-        additionalData: aadBytes as unknown as BufferSource,
-        tagLength: 128,
-      },
-      cryptoKey,
-      plaintextBytes as unknown as BufferSource
-    );
+      const ciphertextBuffer = await globalThis.crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: nonce as unknown as BufferSource,
+          additionalData: aadBytes as unknown as BufferSource,
+          tagLength: 128,
+        },
+        cryptoKey,
+        plaintextBytes as unknown as BufferSource
+      );
 
-    return {
-      ciphertext: bytesToBase64(new Uint8Array(ciphertextBuffer)),
-      nonce: bytesToBase64(nonce),
-      crypto_version: CURRENT_CRYPTO_VERSION,
-    };
+      return {
+        ciphertext: bytesToBase64(new Uint8Array(ciphertextBuffer)),
+        nonce: bytesToBase64(nonce),
+        crypto_version: CURRENT_CRYPTO_VERSION,
+      };
+    } catch {}
   }
 
-  // 2. Node.js crypto fallback
+  // 2. Node.js crypto module (Jest test environment)
   try {
     const nodeCrypto = require('crypto');
-    const cipher = nodeCrypto.createCipheriv('aes-256-gcm', Buffer.from(keyBytes), Buffer.from(nonce), {
-      authTagLength: 16,
-    });
-    if (aadBytes) {
-      cipher.setAAD(Buffer.from(aadBytes));
+    if (nodeCrypto && typeof nodeCrypto.createCipheriv === 'function') {
+      const cipher = nodeCrypto.createCipheriv('aes-256-gcm', Buffer.from(keyBytes), Buffer.from(nonce), {
+        authTagLength: 16,
+      });
+      if (aadBytes) {
+        cipher.setAAD(Buffer.from(aadBytes));
+      }
+      const encrypted = Buffer.concat([cipher.update(Buffer.from(plaintextBytes)), cipher.final()]);
+      const tag = cipher.getAuthTag();
+      const combined = Buffer.concat([encrypted, tag]);
+
+      return {
+        ciphertext: combined.toString('base64'),
+        nonce: bytesToBase64(nonce),
+        crypto_version: CURRENT_CRYPTO_VERSION,
+      };
     }
-    const encrypted = Buffer.concat([cipher.update(Buffer.from(plaintextBytes)), cipher.final()]);
-    const tag = cipher.getAuthTag();
-    const combined = Buffer.concat([encrypted, tag]);
+  } catch {}
+
+  // 3. Pure JavaScript AES-256-GCM via node-forge (Hermes engine / React Native mobile)
+  try {
+    const forge = require('node-forge');
+    let keyStr = '';
+    for (let i = 0; i < keyBytes.length; i++) keyStr += String.fromCharCode(keyBytes[i]);
+    let ivStr = '';
+    for (let i = 0; i < nonce.length; i++) ivStr += String.fromCharCode(nonce[i]);
+
+    const cipher = forge.cipher.createCipher('AES-GCM', forge.util.createBuffer(keyStr));
+    cipher.start({
+      iv: forge.util.createBuffer(ivStr),
+      additionalData: associatedData || undefined,
+      tagLength: 128,
+    });
+    cipher.update(forge.util.createBuffer(forge.util.encodeUtf8(plaintext)));
+    cipher.finish();
+
+    const outputBytes = cipher.output.getBytes();
+    const tagBytes = cipher.mode.tag.getBytes();
+    const combinedBytes = outputBytes + tagBytes;
+    const ciphertextBase64 = forge.util.encode64(combinedBytes);
 
     return {
-      ciphertext: combined.toString('base64'),
+      ciphertext: ciphertextBase64,
       nonce: bytesToBase64(nonce),
       crypto_version: CURRENT_CRYPTO_VERSION,
     };
@@ -266,51 +299,95 @@ export async function decryptAesGcm(
   const ciphertextWithTagBytes = base64ToBytes(payload.ciphertext);
   const aadBytes = associatedData ? new TextEncoder().encode(associatedData) : undefined;
 
-  // 1. WebCrypto API
+  // 1. WebCrypto API (Browsers, Node with subtle crypto)
   if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle) {
-    const cryptoKey = await globalThis.crypto.subtle.importKey(
-      'raw',
-      keyBytes as unknown as BufferSource,
-      { name: 'AES-GCM' },
-      false,
-      ['decrypt']
-    );
+    try {
+      const cryptoKey = await globalThis.crypto.subtle.importKey(
+        'raw',
+        keyBytes as unknown as BufferSource,
+        { name: 'AES-GCM' },
+        false,
+        ['decrypt']
+      );
 
-    const decryptedBuffer = await globalThis.crypto.subtle.decrypt(
-      {
-        name: 'AES-GCM',
-        iv: nonceBytes as unknown as BufferSource,
-        additionalData: aadBytes as unknown as BufferSource,
-        tagLength: 128,
-      },
-      cryptoKey,
-      ciphertextWithTagBytes as unknown as BufferSource
-    );
+      const decryptedBuffer = await globalThis.crypto.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: nonceBytes as unknown as BufferSource,
+          additionalData: aadBytes as unknown as BufferSource,
+          tagLength: 128,
+        },
+        cryptoKey,
+        ciphertextWithTagBytes as unknown as BufferSource
+      );
 
-    return new TextDecoder().decode(decryptedBuffer);
+      return new TextDecoder().decode(decryptedBuffer);
+    } catch {}
   }
 
-  // 2. Node.js crypto fallback
+  // 2. Node.js crypto fallback (Jest test environment)
   try {
     const nodeCrypto = require('crypto');
+    if (nodeCrypto && typeof nodeCrypto.createDecipheriv === 'function') {
+      const tagLength = 16;
+      if (ciphertextWithTagBytes.length < tagLength) {
+        throw new Error('Invalid ciphertext length');
+      }
+
+      const ciphertext = ciphertextWithTagBytes.subarray(0, ciphertextWithTagBytes.length - tagLength);
+      const tag = ciphertextWithTagBytes.subarray(ciphertextWithTagBytes.length - tagLength);
+
+      const decipher = nodeCrypto.createDecipheriv('aes-256-gcm', Buffer.from(keyBytes), Buffer.from(nonceBytes), {
+        authTagLength: 16,
+      });
+      decipher.setAuthTag(Buffer.from(tag));
+      if (aadBytes) {
+        decipher.setAAD(Buffer.from(aadBytes));
+      }
+
+      const decrypted = Buffer.concat([decipher.update(Buffer.from(ciphertext)), decipher.final()]);
+      return decrypted.toString('utf8');
+    }
+  } catch (err: any) {
+    if (err.message && (err.message.includes('Unsupported state') || err.message.includes('auth tag'))) {
+      throw err;
+    }
+  }
+
+  // 3. Pure JavaScript AES-256-GCM via node-forge (Hermes engine / React Native mobile)
+  try {
+    const forge = require('node-forge');
     const tagLength = 16;
     if (ciphertextWithTagBytes.length < tagLength) {
       throw new Error('Invalid ciphertext length');
     }
 
-    const ciphertext = ciphertextWithTagBytes.subarray(0, ciphertextWithTagBytes.length - tagLength);
-    const tag = ciphertextWithTagBytes.subarray(ciphertextWithTagBytes.length - tagLength);
+    const ciphertextRaw = ciphertextWithTagBytes.subarray(0, ciphertextWithTagBytes.length - tagLength);
+    const tagRaw = ciphertextWithTagBytes.subarray(ciphertextWithTagBytes.length - tagLength);
 
-    const decipher = nodeCrypto.createDecipheriv('aes-256-gcm', Buffer.from(keyBytes), Buffer.from(nonceBytes), {
-      authTagLength: 16,
+    let keyStr = '';
+    for (let i = 0; i < keyBytes.length; i++) keyStr += String.fromCharCode(keyBytes[i]);
+    let ivStr = '';
+    for (let i = 0; i < nonceBytes.length; i++) ivStr += String.fromCharCode(nonceBytes[i]);
+    let ctStr = '';
+    for (let i = 0; i < ciphertextRaw.length; i++) ctStr += String.fromCharCode(ciphertextRaw[i]);
+    let tagStr = '';
+    for (let i = 0; i < tagRaw.length; i++) tagStr += String.fromCharCode(tagRaw[i]);
+
+    const decipher = forge.cipher.createDecipher('AES-GCM', forge.util.createBuffer(keyStr));
+    decipher.start({
+      iv: forge.util.createBuffer(ivStr),
+      additionalData: associatedData || undefined,
+      tag: forge.util.createBuffer(tagStr),
     });
-    decipher.setAuthTag(Buffer.from(tag));
-    if (aadBytes) {
-      decipher.setAAD(Buffer.from(aadBytes));
+    decipher.update(forge.util.createBuffer(ctStr));
+    const pass = decipher.finish();
+
+    if (!pass) {
+      throw new Error('Authentication tag mismatch or corrupted ciphertext');
     }
 
-    const decrypted = Buffer.concat([decipher.update(Buffer.from(ciphertext)), decipher.final()]);
-    return decrypted.toString('utf8');
+    return forge.util.decodeUtf8(decipher.output.getBytes());
   } catch (err: any) {
     throw new Error(`AES-256-GCM authentication failed or corrupted ciphertext: ${err.message}`);
   }
