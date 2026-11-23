@@ -3,6 +3,13 @@ import { EncryptedPayload } from './types';
 export const CURRENT_CRYPTO_VERSION = 1;
 
 /**
+ * Explicitly zeroes out sensitive byte buffers in memory to prevent memory remanence.
+ */
+export function zeroMemory(buffer: Uint8Array): void {
+  buffer.fill(0);
+}
+
+/**
  * Returns a cryptographically secure random buffer of specified byte length.
  */
 export function getRandomBytes(length: number): Uint8Array {
@@ -51,7 +58,7 @@ export function base64ToBytes(base64: string): Uint8Array {
 
 /**
  * Encrypts a plaintext string using AES-256-GCM under the provided 256-bit key.
- * Always generates a fresh 96-bit (12-byte) nonce.
+ * Always generates a fresh 96-bit (12-byte) nonce and binds Associated Authenticated Data (AAD).
  */
 export async function encryptAesGcm(
   keyBytes: Uint8Array,
@@ -66,7 +73,7 @@ export async function encryptAesGcm(
   const plaintextBytes = new TextEncoder().encode(plaintext);
   const aadBytes = associatedData ? new TextEncoder().encode(associatedData) : undefined;
 
-  // 1. WebCrypto
+  // 1. WebCrypto API
   if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle) {
     const cryptoKey = await globalThis.crypto.subtle.importKey(
       'raw',
@@ -113,12 +120,12 @@ export async function encryptAesGcm(
       crypto_version: CURRENT_CRYPTO_VERSION,
     };
   } catch (err: any) {
-    throw new Error(`AES-GCM encryption failed: ${err.message}`);
+    throw new Error(`AES-256-GCM encryption failed: ${err.message}`);
   }
 }
 
 /**
- * Decrypts an AES-256-GCM ciphertext payload and verifies its authentication tag.
+ * Decrypts an AES-256-GCM ciphertext payload and validates its 128-bit authentication tag and AAD.
  */
 export async function decryptAesGcm(
   keyBytes: Uint8Array,
@@ -133,7 +140,7 @@ export async function decryptAesGcm(
   const ciphertextWithTagBytes = base64ToBytes(payload.ciphertext);
   const aadBytes = associatedData ? new TextEncoder().encode(associatedData) : undefined;
 
-  // 1. WebCrypto
+  // 1. WebCrypto API
   if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle) {
     const cryptoKey = await globalThis.crypto.subtle.importKey(
       'raw',
@@ -179,6 +186,6 @@ export async function decryptAesGcm(
     const decrypted = Buffer.concat([decipher.update(Buffer.from(ciphertext)), decipher.final()]);
     return decrypted.toString('utf8');
   } catch (err: any) {
-    throw new Error(`AES-GCM decryption failed / authentication tag mismatch: ${err.message}`);
+    throw new Error(`AES-256-GCM authentication failed or corrupted ciphertext: ${err.message}`);
   }
 }

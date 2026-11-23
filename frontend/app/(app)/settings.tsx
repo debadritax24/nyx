@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/store/authStore';
@@ -7,19 +7,48 @@ import { useVaultStore } from '../../src/store/vaultStore';
 import { useSyncStore } from '../../src/store/syncStore';
 import { Button } from '../../src/components/Button';
 import { Colors, Radius, Spacing } from '../../src/components/tokens';
+import { KeystoreService } from '../../src/core/crypto';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { user, signOut } = useAuthStore();
-  const { lock, accounts } = useVaultStore();
+  const { lock, accounts, resetVault } = useVaultStore();
   const { syncNow, isSyncing, lastSyncedAt } = useSyncStore();
   const [signingOut, setSigningOut] = useState(false);
+  const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+
+  useEffect(() => {
+    KeystoreService.isBiometricsEnabled().then(setBiometricsEnabled);
+  }, []);
+
+  const handleToggleBiometrics = async (val: boolean) => {
+    await KeystoreService.setBiometricsEnabled(val);
+    setBiometricsEnabled(val);
+  };
 
   const handleLockVault = () => {
     lock();
     Alert.alert('Vault Locked', 'Your local vault is locked. Decrypted secrets cleared from RAM.', [
       { text: 'OK', onPress: () => router.replace('/') },
     ]);
+  };
+
+  const handleResetVault = () => {
+    Alert.alert(
+      'Reset Local Vault',
+      'This will erase all locally stored credentials and keys from this device. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Erase Vault',
+          style: 'destructive',
+          onPress: async () => {
+            await resetVault();
+            router.replace('/');
+          },
+        },
+      ]
+    );
   };
 
   const handleSignOut = async () => {
@@ -48,7 +77,7 @@ export default function SettingsScreen() {
         <Text style={styles.sectionTitle}>Account & Cloud</Text>
         <View style={styles.card}>
           <Text style={styles.label}>Authenticated User</Text>
-          <Text style={styles.value}>{user?.email || 'Offline Guest'}</Text>
+          <Text style={styles.value}>{user?.email || 'Offline Encrypted Vault'}</Text>
 
           <View style={styles.divider} />
 
@@ -73,6 +102,23 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Security Preferences</Text>
+        <View style={styles.card}>
+          <View style={styles.switchRow}>
+            <View style={styles.switchInfo}>
+              <Text style={styles.switchLabel}>Biometric Unlock</Text>
+              <Text style={styles.switchSublabel}>Require fingerprint or face unlock to access vault key</Text>
+            </View>
+            <Switch
+              value={biometricsEnabled}
+              onValueChange={handleToggleBiometrics}
+              trackColor={{ false: Colors.cardBorder, true: Colors.primary }}
+            />
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.section}>
         <Text style={styles.sectionTitle}>Security Actions</Text>
         <Button
           title="Lock Vault Now"
@@ -82,9 +128,15 @@ export default function SettingsScreen() {
         />
         <Button
           title="Sign Out"
-          variant="danger"
+          variant="outline"
           loading={signingOut}
           onPress={handleSignOut}
+          style={styles.actionBtn}
+        />
+        <Button
+          title="Reset Local Vault"
+          variant="danger"
+          onPress={handleResetVault}
           style={styles.actionBtn}
         />
       </View>
@@ -146,6 +198,25 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: Colors.cardBorder,
     marginVertical: Spacing.sm,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  switchInfo: {
+    flex: 1,
+    marginRight: Spacing.md,
+  },
+  switchLabel: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  switchSublabel: {
+    color: Colors.textDim,
+    fontSize: 12,
+    marginTop: 2,
   },
   syncBtn: {
     marginTop: Spacing.md,

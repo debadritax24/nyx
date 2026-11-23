@@ -4,12 +4,21 @@ const SECURE_STORE_VAULT_KEY_ALIAS = 'nyx_master_vault_key_v1';
 const SECURE_STORE_BIOMETRIC_PREF = 'nyx_biometrics_enabled_v1';
 
 /**
- * Storage abstraction for the Android Keystore backed by Expo SecureStore.
+ * Storage abstraction for the Android Keystore backed by Expo SecureStore
+ * and protected by device biometric authentication (Fingerprint / Face Unlock).
  */
 export class KeystoreService {
   private static async getSecureStore() {
     try {
       return require('expo-secure-store');
+    } catch {
+      return null;
+    }
+  }
+
+  private static async getLocalAuth() {
+    try {
+      return require('expo-local-authentication');
     } catch {
       return null;
     }
@@ -26,15 +35,53 @@ export class KeystoreService {
         keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
     } else {
-      // Memory/mock fallback in test environments
       (globalThis as any).__nyx_mock_keystore = encoded;
     }
   }
 
   /**
-   * Retrieves the 256-bit Vault Key from hardware-backed storage.
+   * Checks whether biometric hardware is present and enrolled.
    */
-  static async getVaultKey(): Promise<Uint8Array | null> {
+  static async canUseBiometrics(): Promise<boolean> {
+    const LocalAuth = await this.getLocalAuth();
+    if (!LocalAuth) return false;
+    const hasHardware = await LocalAuth.hasHardwareAsync();
+    const isEnrolled = await LocalAuth.isEnrolledAsync();
+    return hasHardware && isEnrolled;
+  }
+
+  /**
+   * Authenticates user via device biometrics (Fingerprint/Face) or PIN fallback.
+   */
+  static async authenticateUser(prompt: string = 'Unlock NYX Vault'): Promise<boolean> {
+    const LocalAuth = await this.getLocalAuth();
+    if (!LocalAuth) return true; // In test environments or when module unavailable
+
+    const result = await LocalAuth.authenticateAsync({
+      promptMessage: prompt,
+      cancelLabel: 'Cancel',
+      fallbackLabel: 'Use Device Passcode',
+      disableDeviceFallback: false,
+    });
+
+    return result.success;
+  }
+
+  /**
+   * Retrieves the 256-bit Vault Key from hardware-backed storage.
+   * If biometrics are enabled, prompts for biometric unlock before returning key.
+   */
+  static async getVaultKey(promptBiometrics: boolean = true): Promise<Uint8Array | null> {
+    if (promptBiometrics) {
+      const bioEnabled = await this.isBiometricsEnabled();
+      if (bioEnabled) {
+        const authenticated = await this.authenticateUser();
+        if (!authenticated) {
+          throw new Error('Biometric authentication failed or cancelled');
+        }
+      }
+    }
+
     const SecureStore = await this.getSecureStore();
     let encoded: string | null = null;
     if (SecureStore) {
@@ -48,7 +95,7 @@ export class KeystoreService {
   }
 
   /**
-   * Deletes the local Vault Key from hardware-backed storage (e.g. on full reset).
+   * Deletes the local Vault Key from storage and wipes mock memory.
    */
   static async deleteVaultKey(): Promise<void> {
     const SecureStore = await this.getSecureStore();

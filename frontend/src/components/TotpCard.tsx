@@ -8,9 +8,10 @@ import { generateTotp } from '../core/totp';
 interface TotpCardProps {
   account: DecryptedAccountRecord;
   onCopy?: (code: string) => void;
+  onDelete?: (id: string) => void;
 }
 
-export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy }) => {
+export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete }) => {
   const [code, setCode] = useState('------');
   const [remaining, setRemaining] = useState(30);
 
@@ -42,7 +43,12 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy }) => {
     };
   }, [account]);
 
-  const formattedCode = code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code;
+  const formattedCode =
+    code.length === 6
+      ? `${code.slice(0, 3)} ${code.slice(3)}`
+      : code.length === 8
+      ? `${code.slice(0, 4)} ${code.slice(4)}`
+      : code;
 
   return (
     <View style={styles.card}>
@@ -55,7 +61,18 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy }) => {
             {account.account_name}
           </Text>
         </View>
-        <CountdownCircle remaining={remaining} total={account.period || 30} />
+        <View style={styles.actionRight}>
+          <CountdownCircle remaining={remaining} total={account.period || 30} />
+          {onDelete && (
+            <TouchableOpacity
+              onPress={() => onDelete(account.id)}
+              style={styles.deleteBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.deleteIcon}>×</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <TouchableOpacity
@@ -88,6 +105,25 @@ const styles = StyleSheet.create({
   infoCol: {
     flex: 1,
     marginRight: Spacing.sm,
+  },
+  actionRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  deleteBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: Radius.full,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteIcon: {
+    color: Colors.danger,
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 20,
   },
   issuerText: {
     color: Colors.text,

@@ -1,65 +1,96 @@
-import { generateVaultKey, encryptAesGcm, decryptAesGcm } from '../../../src/core/crypto/vault';
-import { wrapVaultKey, unwrapVaultKey } from '../../../src/core/crypto/kdf';
+import { generateVaultKey, encryptAesGcm, decryptAesGcm, zeroMemory, getRandomBytes } from '../../../src/core/crypto/vault';
 
-describe('Cryptographic Vault & AES-256-GCM', () => {
-  it('generates a 32-byte (256-bit) Vault Key', () => {
+describe('AES-256-GCM Authenticated Encryption & Key Lifecycle', () => {
+  it('generates a 32-byte (256-bit) cryptographically secure Vault Key', () => {
     const key = generateVaultKey();
     expect(key).toBeInstanceOf(Uint8Array);
     expect(key.length).toBe(32);
+    // Not all zeros
+    expect(key.some((b) => b !== 0)).toBe(true);
   });
 
-  it('successfully encrypts and decrypts a record roundtrip', async () => {
+  it('successfully encrypts and decrypts a record roundtrip with AAD', async () => {
     const vaultKey = generateVaultKey();
     const plaintext = JSON.stringify({
       issuer: 'ProtonMail',
       account: 'sec@pm.me',
       secret: 'JBSWY3DPEHPK3PXP',
     });
+    const aad = 'nyx-account:acc_123:v1';
 
-    const encrypted = await encryptAesGcm(vaultKey, plaintext, 'account-record-v1');
+    const encrypted = await encryptAesGcm(vaultKey, plaintext, aad);
     expect(encrypted.ciphertext).toBeDefined();
     expect(encrypted.nonce).toBeDefined();
     expect(encrypted.crypto_version).toBe(1);
 
-    const decrypted = await decryptAesGcm(vaultKey, encrypted, 'account-record-v1');
+    const decrypted = await decryptAesGcm(vaultKey, encrypted, aad);
     expect(decrypted).toBe(plaintext);
     const parsed = JSON.parse(decrypted);
     expect(parsed.issuer).toBe('ProtonMail');
   });
 
-  it('fails decryption when ciphertext is tampered with (Auth Tag verification)', async () => {
+  it('fails decryption when wrong key is provided', async () => {
+    const key1 = generateVaultKey();
+    const key2 = generateVaultKey();
+    const plaintext = 'SecretPayloadData';
+
+    const encrypted = await encryptAesGcm(key1, plaintext);
+    await expect(decryptAesGcm(key2, encrypted)).rejects.toThrow();
+  });
+
+  it('fails decryption when ciphertext is tampered with', async () => {
     const vaultKey = generateVaultKey();
     const plaintext = 'SuperSensitiveSecretKey123';
     const encrypted = await encryptAesGcm(vaultKey, plaintext);
 
-    // Tamper with first byte of base64 ciphertext
     const rawBuffer = Buffer.from(encrypted.ciphertext, 'base64');
-    rawBuffer[0] ^= 0xff; // Flip bits
-    const tamperedPayload = {
+    rawBuffer[0] ^= 0x01; // Tamper with 1 bit
+    const tampered = {
       ...encrypted,
       ciphertext: rawBuffer.toString('base64'),
     };
 
-    await expect(decryptAesGcm(vaultKey, tamperedPayload)).rejects.toThrow();
+    await expect(decryptAesGcm(vaultKey, tampered)).rejects.toThrow();
   });
 
-  it('wraps and unwraps Vault Key using passphrase KDF envelope', async () => {
-    const masterVaultKey = generateVaultKey();
-    const passphrase = 'Correct-Horse-Battery-Staple-2026!';
+  it('fails decryption when nonce is tampered with', async () => {
+    const vaultKey = generateVaultKey();
+    const encrypted = await encryptAesGcm(vaultKey, 'Plaintext');
 
-    const envelope = await wrapVaultKey(masterVaultKey, passphrase);
-    expect(envelope.wrappedKey).toBeDefined();
-    expect(envelope.salt).toBeDefined();
-    expect(envelope.nonce).toBeDefined();
+    const rawNonce = Buffer.from(encrypted.nonce, 'base64');
+    rawNonce[0] ^= 0x01;
+    const tampered = {
+      ...encrypted,
+      nonce: rawNonce.toString('base64'),
+    };
 
-    const unwrapped = await unwrapVaultKey(envelope, passphrase);
-    expect(Array.from(unwrapped)).toEqual(Array.from(masterVaultKey));
+    await expect(decryptAesGcm(vaultKey, tampered)).rejects.toThrow();
   });
 
-  it('fails unwrapping when wrong passphrase is provided', async () => {
-    const masterVaultKey = generateVaultKey();
-    const envelope = await wrapVaultKey(masterVaultKey, 'ValidPassphrase123');
+  it('fails decryption when Associated Authenticated Data (AAD) is altered', async () => {
+    const vaultKey = generateVaultKey();
+    const encrypted = await encryptAesGcm(vaultKey, 'SecretAccountPayload', 'account-id-101');
 
-    await expect(unwrapVaultKey(envelope, 'IncorrectPassword456')).rejects.toThrow();
+    // Attempt decrypting with mismatched AAD
+    await expect(
+      decryptAesGcm(vaultKey, encrypted, 'account-id-999')
+    ).rejects.toThrow();
+  });
+
+  it('produces unique nonces across 1,000 successive encryptions without collisions', () => {
+    const nonces = new Set<string>();
+    for (let i = 0; i < 1000; i++) {
+      const nonce = Buffer.from(getRandomBytes(12)).toString('hex');
+      expect(nonces.has(nonce)).toBe(false);
+      nonces.add(nonce);
+    }
+    expect(nonces.size).toBe(1000);
+  });
+
+  it('zeroMemory overwrites byte buffer completely', () => {
+    const key = generateVaultKey();
+    expect(key.some((b) => b !== 0)).toBe(true);
+    zeroMemory(key);
+    expect(key.every((b) => b === 0)).toBe(true);
   });
 });

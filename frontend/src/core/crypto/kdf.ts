@@ -4,9 +4,9 @@ import { getRandomBytes, bytesToBase64, base64ToBytes, encryptAesGcm, decryptAes
 export const DEFAULT_ARGON2_PARAMS: KdfParams = {
   algorithm: 'argon2id',
   iterations: 3,
-  memory: 65536,
-  parallelism: 4,
-  keyLength: 32,
+  memory: 65536, // 64 MB
+  parallelism: 1, // Standard parallelism for mobile WebAssembly execution
+  keyLength: 32, // 256 bits
 };
 
 export const DEFAULT_PBKDF2_PARAMS: KdfParams = {
@@ -16,10 +16,41 @@ export const DEFAULT_PBKDF2_PARAMS: KdfParams = {
 };
 
 /**
- * Universal Key Derivation: derives a 256-bit wrapping key from a passphrase/secret.
- * Uses PBKDF2 (SHA-256) where native Argon2id module is not linked, with full Argon2id metadata support.
+ * Derives a 256-bit symmetric key using Argon2id (RFC 9106) via WebAssembly.
+ * Falls back to PBKDF2 only if WebAssembly is strictly unavailable in the runtime environment.
  */
-export async function deriveKeyFromSecret(
+export async function deriveKeyArgon2id(
+  passphrase: string,
+  saltBytes: Uint8Array,
+  params: KdfParams = DEFAULT_ARGON2_PARAMS
+): Promise<Uint8Array> {
+  try {
+    const { argon2id } = require('hash-wasm');
+    const derived = await argon2id({
+      password: passphrase,
+      salt: saltBytes,
+      iterations: params.iterations,
+      memorySize: params.memory || 65536,
+      parallelism: params.parallelism || 1,
+      hashLength: params.keyLength || 32,
+      outputType: 'binary',
+    });
+    return new Uint8Array(derived);
+  } catch (err: any) {
+    // If WebAssembly is unsupported in environment, fall back to PBKDF2 with explicit warning
+    console.warn(`Argon2id derivation failed (${err.message}). Falling back to PBKDF2-SHA256.`);
+    return deriveKeyPbkdf2(passphrase, saltBytes, {
+      algorithm: 'pbkdf2',
+      iterations: 100000,
+      keyLength: params.keyLength || 32,
+    });
+  }
+}
+
+/**
+ * Universal PBKDF2-SHA256 derivation.
+ */
+export async function deriveKeyPbkdf2(
   passphrase: string,
   saltBytes: Uint8Array,
   params: KdfParams = DEFAULT_PBKDF2_PARAMS
@@ -62,8 +93,22 @@ export async function deriveKeyFromSecret(
     );
     return new Uint8Array(derived);
   } catch (err: any) {
-    throw new Error(`Key derivation failed: ${err.message}`);
+    throw new Error(`PBKDF2 derivation failed: ${err.message}`);
   }
+}
+
+/**
+ * Main key derivation entry point. Dispatches based on requested algorithm.
+ */
+export async function deriveKeyFromSecret(
+  passphrase: string,
+  saltBytes: Uint8Array,
+  params: KdfParams = DEFAULT_ARGON2_PARAMS
+): Promise<Uint8Array> {
+  if (params.algorithm === 'argon2id') {
+    return deriveKeyArgon2id(passphrase, saltBytes, params);
+  }
+  return deriveKeyPbkdf2(passphrase, saltBytes, params);
 }
 
 /**
@@ -72,7 +117,7 @@ export async function deriveKeyFromSecret(
 export async function wrapVaultKey(
   vaultKeyBytes: Uint8Array,
   secretPassphrase: string,
-  params: KdfParams = DEFAULT_PBKDF2_PARAMS
+  params: KdfParams = DEFAULT_ARGON2_PARAMS
 ): Promise<WrappedVaultKeyEnvelope> {
   const salt = getRandomBytes(16);
   const wrappingKey = await deriveKeyFromSecret(secretPassphrase, salt, params);
