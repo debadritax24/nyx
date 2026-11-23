@@ -18,20 +18,20 @@ Every agent must read and adhere to this document before reading or modifying co
 
 ## 2. Non-Negotiable Structural Invariants
 
-1. **Two Root Application Folders Only:**
-   - `frontend/` - All React Native, Expo, and client code.
-   - `backend/` - All Supabase configurations, migrations, and backend tests.
-   - Never create a third application folder at root.
+1. **Unified Root Application Architecture:**
+   - Client Application: `app/` (Expo Router), `src/` (domain, services, store, components), `assets/`, `maestro/`.
+   - Database & Infrastructure: `supabase/` (migrations, configuration), `scripts/` (schema verifier, remote deployment).
+   - Test Suites: `tests/` (unit, integration, and security test suites).
+   - Configuration: `app.json`, `eas.json`, `babel.config.js`, `jest.config.js`, `tsconfig.json`, `package.json` at root.
 2. **Single Environment File:**
    - Root `nyx/.env` is the sole environment file.
    - Never create `.env.example`, `.env.local`, `.env.development`, or `.env.production`.
    - Never commit populated credentials or secrets to Git.
-3. **Frontend Isolation:**
-   - Never import root `.env` or Node-only backend modules into `frontend/`.
-   - Client code only accesses variables with the `EXPO_PUBLIC_` prefix.
-   - Privileged variables (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`) must remain isolated to administrative tooling.
-4. **Independent Maintainability:**
-   - Frontend and backend must be independently buildable and testable.
+3. **Client Secret Isolation:**
+   - Client code only accesses variables with the `EXPO_PUBLIC_` prefix (`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`).
+   - Privileged variables (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`) must remain isolated to administrative migration tooling.
+4. **Independent Executability:**
+   - Client and backend verification tasks can be executed independently (`npm run test:frontend`, `npm run test:backend`) or unified (`npm test`).
 
 ---
 

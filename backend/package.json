@@ -1,9 +1,0 @@
-{
-  "name": "nyx-backend",
-  "version": "1.0.0",
-  "private": true,
-  "description": "NYX Supabase backend tests and scripts",
-  "scripts": {
-    "test": "node scripts/verify_schema.js && node tests/rls.test.js && node tests/live_integration.test.js"
-  }
-}

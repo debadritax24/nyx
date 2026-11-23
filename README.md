@@ -101,50 +101,42 @@ nyx/
 
 ### Quick Start
 
-1. Clone and navigate to the repository:
+1. Navigate to the repository:
    ```bash
    cd nyx
    ```
 
-2. Configure environment:
-   Fill in `.env` in the repository root with your Supabase credentials:
+2. Start the Expo application directly:
    ```bash
-   # edit root .env directly with your project URL and keys
+   npx expo start
+   # or
+   npm start
    ```
 
-3. Install frontend dependencies:
+3. Run on Android:
    ```bash
-   cd frontend
-   npm install
-   ```
-
-4. Start Supabase locally (optional if using cloud project):
-   ```bash
-   cd ../backend
-   supabase start
-   ```
-
-5. Run the frontend application:
-   ```bash
-   cd ../frontend
-   npx expo start --android
+   npm run android
    ```
 
 ---
 
 ## Running Tests
 
-- Run frontend tests:
+- Run full test suite (all unit, integration, and backend security tests):
   ```bash
-  cd frontend && npm test
+  npm test
   ```
-- Run crypto & TOTP vector tests:
+- Run frontend unit and crypto vector tests:
   ```bash
-  cd frontend && npm test -- tests/core/totp/rfc6238.test.ts
+  npm run test:frontend
   ```
-- Run backend security & integration tests:
+- Run backend security & live Supabase integration tests:
   ```bash
-  cd backend && npm test
+  npm run test:backend
+  ```
+- Run TypeScript strict typecheck:
+  ```bash
+  npm run typecheck
   ```
 
 ---

@@ -8,8 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 const { execSync } = require('child_process');
-const { createClient } = require('../../frontend/node_modules/@supabase/supabase-js');
-const { argon2id } = require('../../frontend/node_modules/hash-wasm');
+const { createClient } = require('@supabase/supabase-js');
+const { argon2id } = require('hash-wasm');
 
 // Proxy-compatible Fetch adapter for sandbox environment
 async function curlFetch(input, init = {}) {
@@ -60,7 +60,7 @@ async function curlFetch(input, init = {}) {
 }
 
 // Load root .env
-const envPath = path.join(__dirname, '../../.env');
+const envPath = path.join(__dirname, '../.env');
 const envContent = fs.readFileSync(envPath, 'utf8');
 const env = {};
 for (const line of envContent.split('\n')) {

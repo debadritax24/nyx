@@ -3,7 +3,7 @@ const path = require('path');
 const https = require('https');
 
 // Load environment from root .env
-const envPath = path.join(__dirname, '../../.env');
+const envPath = path.join(__dirname, '../.env');
 if (!fs.existsSync(envPath)) {
   console.error('ERROR: .env not found at', envPath);
   process.exit(1);
