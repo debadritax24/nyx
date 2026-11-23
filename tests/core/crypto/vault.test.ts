@@ -93,4 +93,30 @@ describe('AES-256-GCM Authenticated Encryption & Key Lifecycle', () => {
     zeroMemory(key);
     expect(key.every((b) => b === 0)).toBe(true);
   });
+
+  it('generates secure random bytes even when WebCrypto getRandomValues is unavailable', () => {
+    const originalGetRandomValues = globalThis.crypto?.getRandomValues;
+    try {
+      if (globalThis.crypto) {
+        delete (globalThis.crypto as any).getRandomValues;
+      }
+      const bytes = getRandomBytes(32);
+      expect(bytes).toBeInstanceOf(Uint8Array);
+      expect(bytes.length).toBe(32);
+      expect(bytes.some((b) => b !== 0)).toBe(true);
+
+      // Verify no collision across 100 iterations
+      const set = new Set<string>();
+      for (let i = 0; i < 100; i++) {
+        const rand = Buffer.from(getRandomBytes(16)).toString('hex');
+        expect(set.has(rand)).toBe(false);
+        set.add(rand);
+      }
+      expect(set.size).toBe(100);
+    } finally {
+      if (globalThis.crypto && originalGetRandomValues) {
+        globalThis.crypto.getRandomValues = originalGetRandomValues;
+      }
+    }
+  });
 });
