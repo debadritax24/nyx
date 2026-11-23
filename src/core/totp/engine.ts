@@ -1,9 +1,13 @@
 import { HashAlgorithm, TotpOptions, TotpResult } from './types';
 import { decodeBase32 } from './base32';
+import { hmac } from '@noble/hashes/hmac.js';
+import { sha1 } from '@noble/hashes/legacy.js';
+import { sha256, sha512 } from '@noble/hashes/sha2.js';
 
 /**
  * Universal HMAC calculation supporting SHA-1, SHA-256, and SHA-512
- * Uses Web Crypto API (SubtleCrypto) where available, falling back to Node.js crypto.
+ * Uses Web Crypto API (SubtleCrypto) where available, falling back to Node.js crypto,
+ * and pure JavaScript RFC HMAC via @noble/hashes for React Native / Hermes mobile runtime.
  */
 async function computeHmac(
   algorithm: HashAlgorithm,
@@ -14,31 +18,44 @@ async function computeHmac(
 
   // 1. Check if global crypto.subtle is available (Browsers, Expo WebCrypto, modern React Native)
   if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle) {
-    const cryptoKey = await globalThis.crypto.subtle.importKey(
-      'raw',
-      keyBytes as unknown as BufferSource,
-      { name: 'HMAC', hash: { name: algoName } },
-      false,
-      ['sign']
-    );
-    const signature = await globalThis.crypto.subtle.sign(
-      'HMAC',
-      cryptoKey,
-      messageBytes as unknown as BufferSource
-    );
-    return new Uint8Array(signature);
+    try {
+      const cryptoKey = await globalThis.crypto.subtle.importKey(
+        'raw',
+        keyBytes as unknown as BufferSource,
+        { name: 'HMAC', hash: { name: algoName } },
+        false,
+        ['sign']
+      );
+      const signature = await globalThis.crypto.subtle.sign(
+        'HMAC',
+        cryptoKey,
+        messageBytes as unknown as BufferSource
+      );
+      return new Uint8Array(signature);
+    } catch {}
   }
 
   // 2. Node.js environment fallback (for Jest unit test execution)
   try {
     const nodeCrypto = require('crypto');
-    const nodeAlgo = algorithm.toLowerCase();
-    const hmac = nodeCrypto.createHmac(nodeAlgo, Buffer.from(keyBytes));
-    hmac.update(Buffer.from(messageBytes));
-    return new Uint8Array(hmac.digest());
-  } catch {
-    throw new Error(`SubtleCrypto and Node crypto unavailable for ${algorithm} HMAC computation`);
+    if (nodeCrypto && typeof nodeCrypto.createHmac === 'function') {
+      const nodeAlgo = algorithm.toLowerCase();
+      const nodeHmac = nodeCrypto.createHmac(nodeAlgo, Buffer.from(keyBytes));
+      nodeHmac.update(Buffer.from(messageBytes));
+      return new Uint8Array(nodeHmac.digest());
+    }
+  } catch {}
+
+  // 3. Pure JavaScript RFC HMAC via @noble/hashes (Hermes / React Native mobile)
+  if (algorithm === 'SHA1') {
+    return hmac(sha1, keyBytes, messageBytes);
+  } else if (algorithm === 'SHA256') {
+    return hmac(sha256, keyBytes, messageBytes);
+  } else if (algorithm === 'SHA512') {
+    return hmac(sha512, keyBytes, messageBytes);
   }
+
+  throw new Error(`SubtleCrypto, Node crypto, and pure JS HMAC unavailable for ${algorithm} HMAC computation`);
 }
 
 /**

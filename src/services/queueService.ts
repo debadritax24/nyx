@@ -10,6 +10,8 @@
  */
 
 import { KeystoreService } from '../core/crypto';
+import { hmac } from '@noble/hashes/hmac.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 export type MutationState =
   | 'ENQUEUED'
@@ -108,6 +110,16 @@ export class PersistentMutationQueue {
           .join('');
       } catch {}
     }
+
+    // Pure JS RFC HMAC via @noble/hashes (Hermes / React Native mobile)
+    try {
+      const keyBytes = new TextEncoder().encode(key);
+      const dataBytes = new TextEncoder().encode(data);
+      const sig = hmac(sha256, keyBytes, dataBytes);
+      return Array.from(sig)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    } catch {}
 
     // Deterministic keyed fallback
     let h1 = 0xdeadbeef ^ key.length;

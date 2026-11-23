@@ -130,4 +130,64 @@ describe('RFC 6238 Official Test Vectors & Edge Cases', () => {
       expect(res1.code).not.toBe(res2.code);
     });
   });
+
+  describe('Pure JavaScript / Hermes Runtime Fallback (@noble/hashes)', () => {
+    const originalSubtle = globalThis.crypto?.subtle;
+    const nodeCrypto = require('crypto');
+    const originalCreateHmac = nodeCrypto.createHmac;
+
+    beforeAll(() => {
+      // Simulate React Native Hermes mobile environment (no subtle crypto, no node crypto)
+      if (globalThis.crypto) {
+        Object.defineProperty(globalThis.crypto, 'subtle', {
+          value: undefined,
+          configurable: true,
+        });
+      }
+      nodeCrypto.createHmac = null;
+    });
+
+    afterAll(() => {
+      if (globalThis.crypto && originalSubtle !== undefined) {
+        Object.defineProperty(globalThis.crypto, 'subtle', {
+          value: originalSubtle,
+          configurable: true,
+        });
+      }
+      nodeCrypto.createHmac = originalCreateHmac;
+    });
+
+    it('generates exact RFC 6238 code (287082) using pure JS HMAC on Hermes', async () => {
+      const res = await generateTotp({
+        secret: SHA1_SECRET_BASE32,
+        algorithm: 'SHA1',
+        digits: 6,
+        period: 30,
+        timestamp: 59000,
+      });
+      expect(res.code).toBe('287082');
+    });
+
+    it('generates valid 8-digit SHA256 and SHA512 codes using pure JS HMAC on Hermes', async () => {
+      const res256 = await generateTotp({
+        secret: SHA256_SECRET_BASE32,
+        algorithm: 'SHA256',
+        digits: 8,
+        period: 30,
+        timestamp: 59000,
+      });
+      expect(res256.code).toHaveLength(8);
+      expect(res256.code).toBe('46119246');
+
+      const res512 = await generateTotp({
+        secret: SHA512_SECRET_BASE32,
+        algorithm: 'SHA512',
+        digits: 8,
+        period: 30,
+        timestamp: 59000,
+      });
+      expect(res512.code).toHaveLength(8);
+      expect(res512.code).toBe('01816359');
+    });
+  });
 });

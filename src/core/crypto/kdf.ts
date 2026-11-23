@@ -1,4 +1,6 @@
 import { argon2id as nobleArgon2id } from '@noble/hashes/argon2.js';
+import { pbkdf2 as noblePbkdf2 } from '@noble/hashes/pbkdf2.js';
+import { sha256 as nobleSha256 } from '@noble/hashes/sha2.js';
 import { KdfParams, WrappedVaultKeyEnvelope } from './types';
 import { getRandomBytes, bytesToBase64, base64ToBytes, encryptAesGcm, decryptAesGcm } from './vault';
 
@@ -81,38 +83,51 @@ export async function deriveKeyPbkdf2(
 
   // 1. WebCrypto PBKDF2
   if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle) {
-    const importedPassphrase = await globalThis.crypto.subtle.importKey(
-      'raw',
-      passphraseBytes as unknown as BufferSource,
-      { name: 'PBKDF2' },
-      false,
-      ['deriveBits']
-    );
+    try {
+      const importedPassphrase = await globalThis.crypto.subtle.importKey(
+        'raw',
+        passphraseBytes as unknown as BufferSource,
+        { name: 'PBKDF2' },
+        false,
+        ['deriveBits']
+      );
 
-    const derivedBits = await globalThis.crypto.subtle.deriveBits(
-      {
-        name: 'PBKDF2',
-        salt: saltBytes as unknown as BufferSource,
-        iterations: params.iterations,
-        hash: 'SHA-256',
-      },
-      importedPassphrase,
-      params.keyLength * 8
-    );
+      const derivedBits = await globalThis.crypto.subtle.deriveBits(
+        {
+          name: 'PBKDF2',
+          salt: saltBytes as unknown as BufferSource,
+          iterations: params.iterations,
+          hash: 'SHA-256',
+        },
+        importedPassphrase,
+        params.keyLength * 8
+      );
 
-    return new Uint8Array(derivedBits);
+      return new Uint8Array(derivedBits);
+    } catch {}
   }
 
   // 2. Node.js crypto fallback
   try {
     const nodeCrypto = require('crypto');
-    const derived = nodeCrypto.pbkdf2Sync(
-      Buffer.from(passphraseBytes),
-      Buffer.from(saltBytes),
-      params.iterations,
-      params.keyLength,
-      'sha256'
-    );
+    if (nodeCrypto && typeof nodeCrypto.pbkdf2Sync === 'function') {
+      const derived = nodeCrypto.pbkdf2Sync(
+        Buffer.from(passphraseBytes),
+        Buffer.from(saltBytes),
+        params.iterations,
+        params.keyLength,
+        'sha256'
+      );
+      return new Uint8Array(derived);
+    }
+  } catch {}
+
+  // 3. Pure JavaScript RFC PBKDF2 via @noble/hashes (Hermes / React Native mobile)
+  try {
+    const derived = noblePbkdf2(nobleSha256, passphrase, saltBytes, {
+      c: params.iterations,
+      dkLen: params.keyLength,
+    });
     return new Uint8Array(derived);
   } catch (err: any) {
     throw new Error(`PBKDF2 derivation failed: ${err.message}`);
