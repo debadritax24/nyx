@@ -15,8 +15,11 @@ describe('Base32 Decoder and Validator', () => {
     expect(isValidBase32('')).toBe(false);
   });
 
-  it('sanitizes spaces and case', () => {
+  it('sanitizes spaces, hyphens, and case', () => {
     expect(sanitizeBase32('jbsw y3dp ehpk 3pxp')).toBe('JBSWY3DPEHPK3PXP');
+    expect(sanitizeBase32('jbsw-y3dp-ehpk-3pxp')).toBe('JBSWY3DPEHPK3PXP');
+    expect(isValidBase32('HXDM-VJEC-JJWS-RB3H')).toBe(true);
+    expect(decodeBase32('HXDM-VJEC-JJWS-RB3H')).toHaveLength(10);
   });
 
   it('correctly encodes and decodes roundtrip', () => {

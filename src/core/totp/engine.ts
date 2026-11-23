@@ -5,49 +5,17 @@ import { sha1 } from '@noble/hashes/legacy.js';
 import { sha256, sha512 } from '@noble/hashes/sha2.js';
 
 /**
- * Universal HMAC calculation supporting SHA-1, SHA-256, and SHA-512
- * Uses Web Crypto API (SubtleCrypto) where available, falling back to Node.js crypto,
- * and pure JavaScript RFC HMAC via @noble/hashes for React Native / Hermes mobile runtime.
+ * Universal RFC HMAC calculation supporting SHA-1, SHA-256, and SHA-512.
+ * Executes pure JavaScript RFC HMAC via @noble/hashes for 100% deterministic,
+ * synchronous execution across React Native Hermes, Node.js, and web browsers.
  */
-async function computeHmac(
+export function computeHmacSync(
   algorithm: HashAlgorithm,
   keyBytes: Uint8Array,
   messageBytes: Uint8Array
-): Promise<Uint8Array> {
-  const normalizedAlgo = (algorithm || 'SHA1').toUpperCase().replace('-', '') as 'SHA1' | 'SHA256' | 'SHA512';
-  const algoName = normalizedAlgo === 'SHA1' ? 'SHA-1' : normalizedAlgo === 'SHA256' ? 'SHA-256' : 'SHA-512';
+): Uint8Array {
+  const normalizedAlgo = (algorithm || 'SHA1').toUpperCase().replace('-', '');
 
-  // 1. Check if global crypto.subtle is available (Browsers, Expo WebCrypto, modern React Native)
-  if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle) {
-    try {
-      const cryptoKey = await globalThis.crypto.subtle.importKey(
-        'raw',
-        keyBytes as unknown as BufferSource,
-        { name: 'HMAC', hash: { name: algoName } },
-        false,
-        ['sign']
-      );
-      const signature = await globalThis.crypto.subtle.sign(
-        'HMAC',
-        cryptoKey,
-        messageBytes as unknown as BufferSource
-      );
-      return new Uint8Array(signature);
-    } catch {}
-  }
-
-  // 2. Node.js environment fallback (for Jest unit test execution)
-  try {
-    const nodeCrypto = require('crypto');
-    if (nodeCrypto && typeof nodeCrypto.createHmac === 'function') {
-      const nodeAlgo = normalizedAlgo.toLowerCase();
-      const nodeHmac = nodeCrypto.createHmac(nodeAlgo, Buffer.from(keyBytes));
-      nodeHmac.update(Buffer.from(messageBytes));
-      return new Uint8Array(nodeHmac.digest());
-    }
-  } catch {}
-
-  // 3. Pure JavaScript RFC HMAC via @noble/hashes (Hermes / React Native mobile)
   if (normalizedAlgo === 'SHA1') {
     return hmac(sha1, keyBytes, messageBytes);
   } else if (normalizedAlgo === 'SHA256') {
@@ -56,13 +24,21 @@ async function computeHmac(
     return hmac(sha512, keyBytes, messageBytes);
   }
 
-  throw new Error(`SubtleCrypto, Node crypto, and pure JS HMAC unavailable for ${algorithm} HMAC computation`);
+  throw new Error(`Unsupported algorithm: ${algorithm}. Must be SHA1, SHA256, or SHA512.`);
+}
+
+export async function computeHmac(
+  algorithm: HashAlgorithm,
+  keyBytes: Uint8Array,
+  messageBytes: Uint8Array
+): Promise<Uint8Array> {
+  return computeHmacSync(algorithm, keyBytes, messageBytes);
 }
 
 /**
- * Generates an RFC 6238 TOTP code given a Base32 secret and parameters.
+ * Generates an RFC 6238 TOTP code synchronously given a Base32 secret and parameters.
  */
-export async function generateTotp(options: TotpOptions): Promise<TotpResult> {
+export function generateTotpSync(options: TotpOptions): TotpResult {
   const {
     secret,
     algorithm = 'SHA1',
@@ -87,15 +63,15 @@ export async function generateTotp(options: TotpOptions): Promise<TotpResult> {
     tempStep >>= BigInt(8);
   }
 
-  const hmac = await computeHmac(algorithm, keyBytes, counterBytes);
+  const hmacResult = computeHmacSync(algorithm, keyBytes, counterBytes);
 
   // Dynamic Truncation (RFC 4226 Section 5.4)
-  const offset = hmac[hmac.length - 1] & 0x0f;
+  const offset = hmacResult[hmacResult.length - 1] & 0x0f;
   const binary =
-    ((hmac[offset] & 0x7f) << 24) |
-    ((hmac[offset + 1] & 0xff) << 16) |
-    ((hmac[offset + 2] & 0xff) << 8) |
-    (hmac[offset + 3] & 0xff);
+    ((hmacResult[offset] & 0x7f) << 24) |
+    ((hmacResult[offset + 1] & 0xff) << 16) |
+    ((hmacResult[offset + 2] & 0xff) << 8) |
+    (hmacResult[offset + 3] & 0xff);
 
   const otp = binary % Math.pow(10, numDigits);
   const code = otp.toString().padStart(numDigits, '0');
@@ -105,6 +81,13 @@ export async function generateTotp(options: TotpOptions): Promise<TotpResult> {
     remainingSeconds,
     period: numPeriod,
   };
+}
+
+/**
+ * Generates an RFC 6238 TOTP code given a Base32 secret and parameters (async interface).
+ */
+export async function generateTotp(options: TotpOptions): Promise<TotpResult> {
+  return generateTotpSync(options);
 }
 
 /**

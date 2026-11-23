@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Colors, Radius, Spacing } from './tokens';
 import { CountdownCircle } from './CountdownCircle';
 import { DecryptedAccountRecord } from '../core/crypto';
-import { generateTotp } from '../core/totp';
+import { generateTotpSync } from '../core/totp';
 
 interface TotpCardProps {
   account: DecryptedAccountRecord;
@@ -12,29 +12,38 @@ interface TotpCardProps {
 }
 
 export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete }) => {
-  const [code, setCode] = useState('------');
-  const [remaining, setRemaining] = useState(30);
+  const computeCode = () => {
+    try {
+      return generateTotpSync({
+        secret: account.secret,
+        algorithm: account.algorithm || 'SHA1',
+        digits: Number(account.digits) || 6,
+        period: Number(account.period) || 30,
+      });
+    } catch (err: any) {
+      if (__DEV__) {
+        console.warn(`[TotpCard] OTP calculation error for ${account.issuer || 'Account'}:`, err?.message || err);
+      }
+      return null;
+    }
+  };
+
+  const initial = computeCode();
+  const [code, setCode] = useState(initial ? initial.code : '------');
+  const [remaining, setRemaining] = useState(initial ? initial.remainingSeconds : (Number(account.period) || 30));
 
   useEffect(() => {
     let isMounted = true;
 
-    const updateOtp = async () => {
-      try {
-        const res = await generateTotp({
-          secret: account.secret,
-          algorithm: account.algorithm || 'SHA1',
-          digits: Number(account.digits) || 6,
-          period: Number(account.period) || 30,
-        });
-        if (isMounted) {
+    const updateOtp = () => {
+      const res = computeCode();
+      if (isMounted) {
+        if (res) {
           setCode(res.code);
           setRemaining(res.remainingSeconds);
+        } else {
+          setCode('ERROR');
         }
-      } catch (err: any) {
-        if (__DEV__) {
-          console.warn(`[TotpCard] OTP calculation error for ${account.issuer || 'Account'}:`, err?.message || err);
-        }
-        if (isMounted) setCode('ERROR');
       }
     };
 

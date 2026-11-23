@@ -5,9 +5,14 @@
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
+export function sanitizeBase32(secret: string): string {
+  if (!secret || typeof secret !== 'string') return '';
+  return secret.replace(/[\s-]+/g, '').toUpperCase();
+}
+
 export function isValidBase32(secret: string): boolean {
   if (!secret || typeof secret !== 'string') return false;
-  const sanitized = secret.replace(/\s+/g, '').replace(/=+$/, '').toUpperCase();
+  const sanitized = sanitizeBase32(secret).replace(/=+$/, '');
   if (sanitized.length === 0) return false;
   for (let i = 0; i < sanitized.length; i++) {
     if (BASE32_ALPHABET.indexOf(sanitized[i]) === -1) {
@@ -17,14 +22,13 @@ export function isValidBase32(secret: string): boolean {
   return true;
 }
 
-export function sanitizeBase32(secret: string): string {
-  return secret.replace(/\s+/g, '').toUpperCase();
-}
-
 export function decodeBase32(secret: string): Uint8Array {
+  if (!secret || typeof secret !== 'string') {
+    throw new Error('Invalid Base32 secret: secret is empty or not a valid string');
+  }
   const sanitized = sanitizeBase32(secret).replace(/=+$/, '');
   if (!isValidBase32(sanitized)) {
-    throw new Error('Invalid Base32 secret string');
+    throw new Error('Invalid Base32 secret string: contains invalid characters');
   }
 
   let bits = 0;
