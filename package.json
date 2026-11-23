@@ -1,0 +1,15 @@
+{
+  "name": "nyx-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NYX offline-first client-side encrypted authenticator",
+  "scripts": {
+    "lint": "npm --prefix frontend run lint",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "test:frontend": "npm --prefix frontend test",
+    "test:backend": "npm --prefix backend test"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2"
+  }
+}

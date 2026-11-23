@@ -1,0 +1,109 @@
+# NYX Cryptographic Architecture & Specifications
+
+---
+
+## 1. Principles & Threat Invariants
+
+1. **Client-Side Exclusive Decryption:** All account records are encrypted and decrypted on the client device. Plaintext cryptographic secrets never touch the network or the cloud.
+2. **Symmetric Vault Key Architecture:** A high-entropy 256-bit symmetric key ($K_v$) serves as the Master Vault Key.
+3. **No Key Reuse Without Nonce Freshness:** AES-256-GCM authenticated encryption is used with a cryptographically secure 96-bit (12-byte) initialization vector (nonce) generated for each encryption operation.
+
+---
+
+## 2. Key Architecture & Wrapping Topology
+
+```mermaid
+flowchart TD
+    subgraph Generation ["Key Generation"]
+        CSPRNG["CSPRNG"] -->|"Generate 32 Random Bytes"| VaultKey["Vault Key (Kv)"]
+    end
+
+    subgraph ProtectionPaths ["3 Independent Protection Paths"]
+        VaultKey --> Path1["1. Local Device Protection"]
+        VaultKey --> Path2["2. Passphrase Recovery"]
+        VaultKey --> Path3["3. Recovery Code"]
+
+        Path1 -->|"Store in TEE / StrongBox"| AndroidKeystore["Android Keystore"]
+        
+        Passphrase["User Passphrase"] -->|"Argon2id (Salt1)"| K_pass["Wrapping Key K_pass"]
+        Path2 -->|"AES-256-GCM Wrap"| K_pass
+        
+        RecoveryCode["24-word Code"] -->|"Argon2id (Salt2)"| K_rec["Wrapping Key K_rec"]
+        Path3 -->|"AES-256-GCM Wrap"| K_rec
+    end
+
+    subgraph CloudStorage ["Supabase Encrypted Storage"]
+        K_pass -->|"Passphrase Wrapped Vault Key + Salt1 + Nonce1"| SupabaseVault["vaults Table"]
+        K_rec -->|"Recovery Wrapped Vault Key + Salt2 + Nonce2"| SupabaseVault
+    end
+```
+
+---
+
+## 3. Cryptographic Primitives & Specifications
+
+### 3.1 Authenticated Account Encryption (AES-256-GCM)
+- **Algorithm:** AES-256 in Galois/Counter Mode (GCM).
+- **Key Length:** 256 bits (32 bytes).
+- **Nonce/IV Length:** 96 bits (12 bytes) generated via `Crypto.getRandomValues`.
+- **Authentication Tag:** 128 bits (16 bytes) appended to ciphertext.
+- **Associated Data (AAD):** Bound to the `user_id` and `crypto_version` to prevent ciphertext substitution across accounts or protocol versions.
+
+```json
+{
+  "crypto_version": 1,
+  "nonce": "Base64EncodedNonce==",
+  "ciphertext": "Base64EncodedCiphertextWithTag=="
+}
+```
+
+### 3.2 Account Plaintext Structure (Before Encryption)
+```json
+{
+  "id": "uuid-v4-identifier",
+  "issuer": "Google",
+  "account_name": "user@example.com",
+  "secret": "JBSWY3DPEHPK3PXP",
+  "algorithm": "SHA1",
+  "digits": 6,
+  "period": 30,
+  "created_at": 1732363200000,
+  "updated_at": 1732363200000
+}
+```
+
+### 3.3 Key Derivation Function (Argon2id)
+When wrapping the Vault Key for passphrase or recovery code storage:
+- **Algorithm:** Argon2id (RFC 9106)
+- **Memory Cost ($m$):** 65,536 KiB (64 MB)
+- **Time Iterations ($t$):** 3 passes
+- **Parallelism ($p$):** 4 threads
+- **Salt:** 16 cryptographically secure random bytes
+- **Derived Key Length:** 32 bytes (256 bits)
+
+---
+
+## 4. Local Keystore Integration (Android)
+
+On Android devices:
+1. When the user sets up NYX, a biometric-bound or hardware-backed master key is established in the **Android Keystore System** using AES-256 in GCM mode.
+2. The Vault Key ($K_v$) is stored encrypted within `Expo SecureStore` backed by the Android Keystore.
+3. Access requires user biometric authentication (`LocalAuthentication.authenticateAsync`) or device PIN fallback.
+4. If biometric enrollment changes, the Keystore invalidates the key, prompting the user for their Master Passphrase to unwrap and re-bind $K_v$.
+
+---
+
+## 5. Emergency Recovery Protocol
+
+If a device is lost or destroyed:
+1. User installs NYX on a new device.
+2. User authenticates via Supabase Auth (email/password).
+3. Client downloads the encrypted record from `vaults` table containing:
+   - `passphrase_wrapped_vault_key`, `passphrase_wrap_nonce`, `passphrase_kdf_salt`, `passphrase_kdf_params`
+   - `recovery_wrapped_vault_key`, `recovery_wrap_nonce`, `recovery_kdf_salt`, `recovery_kdf_params`
+4. The user enters either:
+   - Their **Master Passphrase**, or
+   - Their **24-word Recovery Code**.
+5. The client re-derives the respective wrapping key using Argon2id with the downloaded salt and parameters.
+6. The client unwraps and validates the Vault Key ($K_v$) via AES-256-GCM authentication tag verification.
+7. Upon successful unwrapping, $K_v$ is saved into the new device's local Android Keystore, and all encrypted account records are pulled and decrypted locally.

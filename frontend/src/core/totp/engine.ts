@@ -1,0 +1,96 @@
+import { HashAlgorithm, TotpOptions, TotpResult } from './types';
+import { decodeBase32 } from './base32';
+
+/**
+ * Universal HMAC calculation supporting SHA-1, SHA-256, and SHA-512
+ * Uses Web Crypto API (SubtleCrypto) where available, falling back to Node.js crypto.
+ */
+async function computeHmac(
+  algorithm: HashAlgorithm,
+  keyBytes: Uint8Array,
+  messageBytes: Uint8Array
+): Promise<Uint8Array> {
+  const algoName = algorithm === 'SHA1' ? 'SHA-1' : algorithm === 'SHA256' ? 'SHA-256' : 'SHA-512';
+
+  // 1. Check if global crypto.subtle is available (Browsers, Expo WebCrypto, modern React Native)
+  if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle) {
+    const cryptoKey = await globalThis.crypto.subtle.importKey(
+      'raw',
+      keyBytes as unknown as BufferSource,
+      { name: 'HMAC', hash: { name: algoName } },
+      false,
+      ['sign']
+    );
+    const signature = await globalThis.crypto.subtle.sign(
+      'HMAC',
+      cryptoKey,
+      messageBytes as unknown as BufferSource
+    );
+    return new Uint8Array(signature);
+  }
+
+  // 2. Node.js environment fallback (for Jest unit test execution)
+  try {
+    const nodeCrypto = require('crypto');
+    const nodeAlgo = algorithm.toLowerCase();
+    const hmac = nodeCrypto.createHmac(nodeAlgo, Buffer.from(keyBytes));
+    hmac.update(Buffer.from(messageBytes));
+    return new Uint8Array(hmac.digest());
+  } catch {
+    throw new Error(`SubtleCrypto and Node crypto unavailable for ${algorithm} HMAC computation`);
+  }
+}
+
+/**
+ * Generates an RFC 6238 TOTP code given a Base32 secret and parameters.
+ */
+export async function generateTotp(options: TotpOptions): Promise<TotpResult> {
+  const {
+    secret,
+    algorithm = 'SHA1',
+    digits = 6,
+    period = 30,
+    timestamp = Date.now(),
+  } = options;
+
+  const keyBytes = decodeBase32(secret);
+  const epochSeconds = Math.floor(timestamp / 1000);
+  const timeStep = Math.floor(epochSeconds / period);
+  const remainingSeconds = period - (epochSeconds % period);
+
+  // Convert time step to 8-byte big-endian buffer (RFC 4226)
+  const counterBytes = new Uint8Array(8);
+  let tempStep = BigInt(timeStep);
+  for (let i = 7; i >= 0; i--) {
+    counterBytes[i] = Number(tempStep & BigInt(0xff));
+    tempStep >>= BigInt(8);
+  }
+
+  const hmac = await computeHmac(algorithm, keyBytes, counterBytes);
+
+  // Dynamic Truncation (RFC 4226 Section 5.4)
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const binary =
+    ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff);
+
+  const otp = binary % Math.pow(10, digits);
+  const code = otp.toString().padStart(digits, '0');
+
+  return {
+    code,
+    remainingSeconds,
+    period,
+  };
+}
+
+/**
+ * Calculates remaining seconds in the current period without computing HMAC.
+ */
+export function getRemainingPeriodSeconds(period: number = 30, timestamp: number = Date.now()): number {
+  const epochSeconds = Math.floor(timestamp / 1000);
+  const remainder = epochSeconds % period;
+  return remainder === 0 ? period : period - remainder;
+}
