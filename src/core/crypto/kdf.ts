@@ -1,3 +1,4 @@
+import { argon2id as nobleArgon2id } from '@noble/hashes/argon2.js';
 import { KdfParams, WrappedVaultKeyEnvelope } from './types';
 import { getRandomBytes, bytesToBase64, base64ToBytes, encryptAesGcm, decryptAesGcm } from './vault';
 
@@ -16,29 +17,49 @@ export const DEFAULT_PBKDF2_PARAMS: KdfParams = {
 };
 
 /**
- * Derives a 256-bit symmetric key using Argon2id (RFC 9106) via WebAssembly.
- * Strict: Never silently falls back to another algorithm.
+ * Derives a 256-bit symmetric key using Argon2id (RFC 9106).
+ * Priority:
+ * 1. WebAssembly acceleration via `hash-wasm` when WebAssembly is supported (Node, Web).
+ * 2. Pure JavaScript RFC 9106 Argon2id via `@noble/hashes/argon2` when WebAssembly is unavailable
+ *    (e.g., in React Native / Expo Go on Android Hermes engine).
+ * Strict: Never silently falls back to another algorithm (like PBKDF2). Always executes RFC 9106 Argon2id.
  */
 export async function deriveKeyArgon2id(
   passphrase: string,
   saltBytes: Uint8Array,
   params: KdfParams = DEFAULT_ARGON2_PARAMS
 ): Promise<Uint8Array> {
-  try {
-    const { argon2id } = require('hash-wasm');
-    const iterations = params.iterations || (params as any).t || 3;
-    const memory = params.memory || (params as any).m || 65536;
-    const parallelism = params.parallelism || (params as any).p || 1;
-    const keyLength = params.keyLength || 32;
+  const iterations = params.iterations || (params as any).t || 3;
+  const memory = params.memory || (params as any).m || 65536;
+  const parallelism = params.parallelism || (params as any).p || 1;
+  const keyLength = params.keyLength || 32;
 
-    const derived = await argon2id({
-      password: passphrase,
-      salt: saltBytes,
-      iterations,
-      memorySize: memory,
-      parallelism,
-      hashLength: keyLength,
-      outputType: 'binary',
+  // 1. Try WebAssembly acceleration if available
+  if (typeof globalThis !== 'undefined' && typeof (globalThis as any).WebAssembly !== 'undefined') {
+    try {
+      const { argon2id } = require('hash-wasm');
+      const derived = await argon2id({
+        password: passphrase,
+        salt: saltBytes,
+        iterations,
+        memorySize: memory,
+        parallelism,
+        hashLength: keyLength,
+        outputType: 'binary',
+      });
+      return new Uint8Array(derived);
+    } catch {
+      // If WebAssembly compilation/instantiation fails, proceed to pure JS Argon2id
+    }
+  }
+
+  // 2. Pure JavaScript RFC 9106 Argon2id via @noble/hashes (Hermes / React Native mobile runtime)
+  try {
+    const derived = nobleArgon2id(passphrase, saltBytes, {
+      t: iterations,
+      m: memory,
+      p: parallelism,
+      dkLen: keyLength,
     });
     return new Uint8Array(derived);
   } catch (err: any) {

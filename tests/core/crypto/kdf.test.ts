@@ -49,6 +49,24 @@ describe('Argon2id & PBKDF2 Key Derivation Function (KDF)', () => {
     expect(Array.from(unwrapped)).toEqual(Array.from(masterVaultKey));
   });
 
+  it('derives identical Argon2id key in non-WebAssembly environments (Hermes engine)', async () => {
+    // 1. Derive with WebAssembly
+    const wasmKey = await deriveKeyArgon2id(passphrase, salt, DEFAULT_ARGON2_PARAMS);
+
+    // 2. Simulate Hermes / non-WebAssembly environment
+    const originalWasm = (globalThis as any).WebAssembly;
+    try {
+      delete (globalThis as any).WebAssembly;
+
+      const nonWasmKey = await deriveKeyArgon2id(passphrase, salt, DEFAULT_ARGON2_PARAMS);
+      expect(nonWasmKey).toBeInstanceOf(Uint8Array);
+      expect(nonWasmKey.length).toBe(32);
+      expect(Array.from(nonWasmKey)).toEqual(Array.from(wasmKey));
+    } finally {
+      (globalThis as any).WebAssembly = originalWasm;
+    }
+  });
+
   it('fails unwrapping when incorrect passphrase is provided', async () => {
     const masterVaultKey = generateVaultKey();
     const envelope = await wrapVaultKey(masterVaultKey, passphrase, DEFAULT_ARGON2_PARAMS);

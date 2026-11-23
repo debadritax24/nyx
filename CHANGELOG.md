@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+### React Native Hermes Compatibility & Unified Root Architecture
+- **Pure JavaScript RFC 9106 Argon2id for Hermes Engine:** Integrated `@noble/hashes/argon2.js` into `deriveKeyArgon2id` in `src/core/crypto/kdf.ts`. React Native's Hermes engine does not support WebAssembly; attempting to execute `hash-wasm` resulted in runtime crashes (`WebAssembly is not supported in this environment!`). Derivation now seamlessly selects `@noble/hashes` on Hermes, generating the exact bit-for-bit derived key without falling back to weaker primitives (such as PBKDF2), preserving the Zero Fallback Security Invariant.
+- **Expo Native CSPRNG Integration:** Replaced raw `crypto.getRandomValues` assumptions with `expo-crypto`'s `getRandomBytes` (backed by Android's native `java.security.SecureRandom`), polyfilled `globalThis.crypto.getRandomValues` and `globalThis.crypto.randomUUID` at application root, eliminating `"no cryptographically secure random number generator available"` errors on physical Android devices.
+- **Unified Single-Root Repository Architecture:** Dissolved nested `frontend/` and `backend/` directories into a flat, professional root structure with Expo application code (`app/`, `src/`, `assets/`, `maestro/`) and Supabase infrastructure (`supabase/`, `scripts/`, `tests/`) sharing unified root scripts and dependencies.
+- **Hermes KDF Verification:** Added non-WASM parity test in `tests/core/crypto/kdf.test.ts` verifying that pure JS Argon2id on Hermes produces the exact identical 32-byte key as WebAssembly execution.
+
 ### Adversarial Recovery Audit, Key Rotation Integrity & Release Validation (Phase 9)
 - **Atomic Vault Key Rotation Stored Procedure (Migration 5):** Authored and deployed `20261123000005_atomic_vault_rotation.sql` to live Supabase. Implemented `public.sync_rotate_vault`, which atomically migrates the vault envelope and all re-encrypted account records in a single PostgreSQL transaction with `FOR UPDATE` row locking. Eliminates partial cloud-commit states where accounts could become encrypted under differing keys.
 - **Manifest Key Confidentiality & Hardware Keystore Staging:** Eliminated raw `newVaultKeyBase64` from application storage and manifest files (`nyx_rotation_manifest_v2.json`). Staged key material is now persisted in hardware-backed Android Keystore under a dedicated staging alias (`nyx_staging_vault_key_v1`) and encrypted under the old Vault Key via AES-256-GCM.

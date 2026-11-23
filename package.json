@@ -16,6 +16,7 @@
     "lint": "echo 'Linting project...'"
   },
   "dependencies": {
+    "@noble/hashes": "^2.4.0",
     "@supabase/supabase-js": "^2.49.1",
     "expo": "^58.0.26",
     "expo-asset": "~58.0.21",

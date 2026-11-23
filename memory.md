@@ -2,8 +2,8 @@
 
 ## 1. Project Overview & Current Phase
 - **Project:** NYX Authenticator (Android-first offline, client-side encrypted TOTP vault)
-- **Active Development Phase:** Phase 9 (Adversarial Recovery Audit, Key Rotation Integrity & Release Validation) Completed.
-- **Current Milestone:** Milestone 2.2 (Adversarial audit complete: atomic PostgreSQL vault rotation procedure `sync_rotate_vault`, zero plaintext keys in manifest with Keystore staging key and AES-GCM wrapping, device-bound Keystore-keyed HMAC-SHA256 queue integrity, safe backup rotation, 94 passing frontend tests, 18 backend security suites, and evidence-based conditional release gate).
+- **Active Development Phase:** Hermes Engine Compatibility & Unified Root Architecture Completed.
+- **Current Milestone:** Unified single-root Expo + Supabase layout, native `expo-crypto` CSPRNG integration, pure JavaScript RFC 9106 Argon2id execution via `@noble/hashes` on Hermes engine (zero fallback invariant strictly preserved), 12 passing Jest test suites (95 tests), 8 backend security assertion suites, and 10 live Supabase cloud integration tests.
 
 ---
 
@@ -12,7 +12,7 @@ An independent audit was conducted across cryptography, database RLS, and fronte
 
 1. **[SEC-001 - High] Silent PBKDF2 Fallback instead of Argon2id:**
    - *Finding:* `kdf.ts` previously caught WebAssembly errors and silently switched to PBKDF2 while claiming Argon2id compatibility.
-   - *Remediation:* Removed the silent PBKDF2 fallback. `deriveKeyArgon2id` now strictly enforces RFC 9106 Argon2id via `hash-wasm` (64 MB memory, 3 iterations) and throws explicit fatal errors if derivation fails.
+   - *Remediation:* Removed the silent PBKDF2 fallback. `deriveKeyArgon2id` strictly enforces RFC 9106 Argon2id: using WebAssembly acceleration via `hash-wasm` when WebAssembly is supported, and pure JavaScript RFC 9106 Argon2id via `@noble/hashes/argon2.js` in non-WebAssembly runtimes (Hermes engine). Cryptographic fallback to weaker algorithms remains strictly prohibited.
 2. **[SEC-002 - Critical] Unpersisted Account Records (Memory-Only Zustand State):**
    - *Finding:* Accounts existed solely in JavaScript heap. App termination resulted in complete data loss.
    - *Remediation:* Implemented `LocalVaultStorage` using AES-256-GCM authenticated encryption under the Master Vault Key ($K_v$) with atomic file writes to application-isolated sandbox storage.
@@ -89,36 +89,36 @@ An independent audit was conducted across cryptography, database RLS, and fronte
 ## 4. Current Repository Structure
 ```text
 nyx/
-├── frontend/             # Expo React Native application
-│   ├── app/              # Expo Router filesystem routing (auth and app stacks)
-│   ├── src/
-│   │   ├── components/   # UI primitives (Button, Input, CountdownCircle, TotpCard)
-│   │   ├── core/
-│   │   │   ├── crypto/   # AES-256-GCM, Argon2id KDF, recovery, storage, keystore
-│   │   │   └── totp/     # RFC 6238 engine, Base32 parser, URI validator
-│   │   ├── services/     # Supabase auth, vault, and sync services
-│   │   └── store/        # Zustand state stores (auth, vault, sync)
-│   ├── assets/           # App icons and splash screen
-│   └── tests/            # 7 Jest test suites (53 tests passing)
-├── backend/              # Supabase database infrastructure
-│   ├── supabase/
-│   │   ├── migrations/   # 20261123000000 (initial) & 20261123000001 (RLS hardening)
-│   │   ├── tests/        # pgTAP RLS test suite
-│   │   └── config.toml
-│   ├── scripts/          # Schema verification scripts
-│   └── tests/            # Database security assertion tests
+├── app/                  # Expo Router filesystem routing (auth and app stacks)
+├── src/
+│   ├── components/       # UI primitives (Button, Input, CountdownCircle, TotpCard)
+│   ├── core/
+│   │   ├── crypto/       # AES-256-GCM, Argon2id KDF (@noble/hashes + hash-wasm), recovery, storage, keystore
+│   │   └── totp/         # RFC 6238 engine, Base32 parser, URI validator
+│   ├── services/         # Supabase auth, vault, queue, and sync services
+│   └── store/            # Zustand state stores (auth, vault, sync)
+├── assets/               # App icons and splash screen
+├── maestro/              # Declarative E2E mobile test flows
+├── supabase/             # Supabase database infrastructure
+│   ├── migrations/       # Migrations 0–5 (RLS, CAS concurrency, atomic rotation)
+│   ├── tests/            # pgTAP RLS test suite
+│   └── config.toml
+├── scripts/              # Schema verification scripts
+├── tests/                # 12 Jest test suites (95 tests passing) and database security assertions
+├── package.json          # Root unified npm configuration
+├── tsconfig.json         # Strict TypeScript configuration
 └── [Documentation Files]
 ```
 
 ---
 
 ## 5. Test Suite Verification Summary
-- **Frontend Test Suite:** 12 test suites, 94 tests passing (0 failures).
+- **Frontend Test Suite:** 12 test suites, 95 tests passing (0 failures).
   - `tests/core/totp/rfc6238.test.ts`: Official RFC 6238 vectors (SHA1, SHA256, SHA512), 6-digit & 8-digit codes, leading zeros.
   - `tests/core/totp/base32.test.ts`: Strict RFC 4648 Base32 validation and decoding.
   - `tests/core/totp/uri.test.ts`: Parsing and canonical serialization of `otpauth://` URIs.
   - `tests/core/crypto/vault.test.ts`: AES-256-GCM roundtrip, tampered ciphertext, tampered nonce, tampered AAD, nonce uniqueness.
-  - `tests/core/crypto/kdf.test.ts`: Strict Argon2id WebAssembly derivation, explicit fatal error throwing, passphrase wrapping.
+  - `tests/core/crypto/kdf.test.ts`: Strict Argon2id WebAssembly derivation, non-WASM Hermes engine fallback to pure JS `@noble/hashes/argon2` with bit-for-bit parity, explicit fatal error throwing, passphrase wrapping.
   - `tests/core/crypto/recovery.test.ts`: 24-word recovery code generation, validation, and key wrapping.
   - `tests/core/crypto/storage.test.ts`: Encrypted local persistence, corruption handling, and atomic writes.
   - `tests/services/syncService.test.ts`: AES-256-GCM cloud encryption, AAD validation, deterministic conflict reconciliation (preserving forked copies), tombstone anti-resurrection, delete-vs-update zero data loss, and multi-device bidirectional synchronization simulation.
