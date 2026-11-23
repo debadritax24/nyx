@@ -1,11 +1,17 @@
 import { supabase } from './supabase';
 import {
   WrappedVaultKeyEnvelope,
+  generateVaultKey,
+  wrapVaultKey,
+  wrapVaultKeyWithRecoveryCode,
   unwrapVaultKey,
   unwrapVaultKeyWithRecoveryCode,
   KeystoreService,
+  LocalVaultStorage,
+  DecryptedAccountRecord,
 } from '../core/crypto';
 import { DeviceService } from './deviceService';
+import { SyncService } from './syncService';
 
 export interface RemoteVaultRow {
   id: string;
@@ -132,6 +138,92 @@ export class VaultService {
     return {
       vaultId: remoteVault.id,
       vaultKey,
+    };
+  }
+
+  /**
+   * Rotates the user's Master Vault Key (Kv -> Kv').
+   * Fully re-encrypts all account records, wraps the new key under both the passphrase
+   * and emergency recovery code using fresh nonces and salts, updates Supabase vault metadata,
+   * re-encrypts remote accounts via CAS, and updates local Keystore storage.
+   */
+  static async rotateVaultKey(
+    userId: string,
+    oldVaultKey: Uint8Array,
+    passphrase: string,
+    recoveryCode: string,
+    accounts: DecryptedAccountRecord[]
+  ): Promise<{ newVaultKey: Uint8Array; rotatedCount: number }> {
+    const remoteVault = await this.getRemoteVault(userId);
+    if (!remoteVault) {
+      throw new Error('Remote vault envelope not found.');
+    }
+
+    // 1. Generate fresh 256-bit symmetric vault key
+    const newVaultKey = generateVaultKey();
+
+    // 2. Wrap new key with user passphrase and recovery code
+    const newPassphraseEnvelope = await wrapVaultKey(newVaultKey, passphrase);
+    const newRecoveryEnvelope = await wrapVaultKeyWithRecoveryCode(newVaultKey, recoveryCode);
+
+    // 3. Stage re-encrypted accounts locally with new key
+    await LocalVaultStorage.saveAccounts(newVaultKey, accounts);
+
+    // 4. Update cloud vault record
+    const { error: vaultUpdateErr } = await supabase
+      .from('vaults')
+      .update({
+        passphrase_wrapped_vault_key: newPassphraseEnvelope.wrappedKey,
+        passphrase_wrap_nonce: newPassphraseEnvelope.nonce,
+        passphrase_kdf_salt: newPassphraseEnvelope.salt,
+        passphrase_kdf_params: newPassphraseEnvelope.kdfParams,
+        recovery_wrapped_vault_key: newRecoveryEnvelope.wrappedKey,
+        recovery_wrap_nonce: newRecoveryEnvelope.nonce,
+        recovery_kdf_salt: newRecoveryEnvelope.salt,
+        recovery_kdf_params: newRecoveryEnvelope.kdfParams,
+        crypto_version: 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', remoteVault.id)
+      .eq('user_id', userId);
+
+    if (vaultUpdateErr) {
+      // Rollback local storage to old key
+      await LocalVaultStorage.saveAccounts(oldVaultKey, accounts).catch(() => {});
+      throw new Error(`Failed to update remote vault envelope: ${vaultUpdateErr.message}`);
+    }
+
+    // 5. Re-encrypt each account and push via atomic CAS
+    let rotatedCount = 0;
+    for (const account of accounts) {
+      const encrypted = await SyncService.encryptAccountForSync(newVaultKey, account);
+      const pushRes = await SyncService.pushMutation(userId, {
+        id: account.id,
+        vault_id: remoteVault.id,
+        action: 'UPSERT',
+        expectedVersion: account.version,
+        nextVersion: account.version + 1,
+        ciphertext: encrypted.ciphertext,
+        nonce: encrypted.nonce,
+        crypto_version: 1,
+        deleted_at: account.deleted_at || null,
+        timestamp: Date.now(),
+        retryCount: 0,
+      });
+
+      if (pushRes.success) {
+        account.version += 1;
+        rotatedCount++;
+      }
+    }
+
+    // 6. Update local Keystore with new key
+    await KeystoreService.saveVaultKey(newVaultKey);
+    await LocalVaultStorage.saveAccounts(newVaultKey, accounts);
+
+    return {
+      newVaultKey,
+      rotatedCount,
     };
   }
 }

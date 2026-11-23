@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+### Android Device Validation, Crash-Safe Sync & Release Candidate Audit (Phase 7)
+- **Safe Concurrent CAS & Race Mitigation (Migration 4):** Authored and applied `20261123000004_safe_concurrent_cas.sql` to live Supabase. Hardened `sync_push_account` with sub-transaction `unique_violation` error trapping and row re-locking, converting missing-row concurrent creation races into catchable `23514` CAS concurrency conflicts.
+- **Cross-Vault & Tombstone Resurrection Guards:** Added database guards in `sync_push_account` preventing unauthorized cross-vault account mutations and accidental resurrection of soft-deleted tombstones.
+- **Crash-Safe Persistent Mutation Queue (WAL):** Engineered `PersistentMutationQueue` in `queueService.ts` utilizing atomic Write-Ahead Journaling (`nyx_mutation_queue_v1.journal`) via atomic temporary write and rename. Features a 5-stage state machine (`ENQUEUED`, `PROCESSING`, `ACKNOWLEDGED`, `RETRYING`, `PERMANENTLY_FAILED`).
+- **Interruption Recovery on Startup:** Implemented `recoverInterruptedMutations` routine that queries the server on app startup to verify if mutations stuck in `PROCESSING` were committed before a process termination, acknowledging committed writes and resetting uncommitted writes to `ENQUEUED` for safe idempotent retry.
+- **Bounded Exponential Backoff with Jitter:** Implemented jittered backoff ($500\text{ ms} \times 2^{\text{retry}} + \text{jitter}$, capped at 30s) and immediate permanent failure classification for non-retryable authorization errors (e.g. `42501`).
+- **Vault Key Rotation ($K_v \to K_v'$):** Implemented `VaultService.rotateVaultKey` executing full local re-encryption, fresh salt/nonce generation, Argon2id re-wrapping for passphrase and recovery code, and transactional cloud update via atomic CAS.
+- **Comprehensive Database Security Test Matrix:** Expanded `live_integration.test.js` and `rls.test.js` to verify all 7 requested concurrency and security cases against live Supabase.
+- **Expanded Test Suite:** Added `queueCrashRecovery.test.ts` and `keyRotation.test.ts`, expanding the test suite to 12 passing test suites (82 unit/vector/crash/performance tests) and 7 backend security assertion suites.
+
 ### Production Hardening & Release Readiness (Phase 6)
 - **Atomic Compare-And-Swap (CAS) Concurrency:** Implemented `sync_push_account` stored procedure via migration `20261123000003_atomic_cas_concurrency.sql` with `FOR UPDATE` row locking, eliminating stale overwrite race conditions.
 - **Delete-vs-Update Conflict Resolution (Zero Data Loss):** Upgraded `reconcileAccounts` to preserve local offline modifications as `(Restored from Deleted Copy)` when encountering a remote tombstone, while purging the deleted canonical ID to prevent resurrection.

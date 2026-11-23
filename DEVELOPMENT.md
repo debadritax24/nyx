@@ -118,3 +118,9 @@ maestro test frontend/maestro/03-authenticator-flow.yaml
 maestro test frontend/maestro/04-synchronization-flow.yaml
 maestro test frontend/maestro/05-recovery-flow.yaml
 ```
+
+### 5.4 Applying Remote Supabase Migrations
+Applies forward-only migrations sequentially to the live Supabase project using the Management API:
+```bash
+node backend/scripts/apply_remote_migrations.js
+```

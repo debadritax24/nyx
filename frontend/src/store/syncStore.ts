@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { SyncMutation, SyncService, SyncState } from '../services/syncService';
+import { PersistentMutationQueue } from '../services/queueService';
 import { DecryptedAccountRecord } from '../core/crypto';
 
 interface SyncStoreState {
@@ -9,14 +10,14 @@ interface SyncStoreState {
   conflictsCount: number;
   syncError: string | null;
 
-  queueMutation: (mutation: SyncMutation) => void;
+  queueMutation: (mutation: SyncMutation) => Promise<void>;
   triggerSync: (
     userId: string,
     vaultKey: Uint8Array,
     localAccounts: DecryptedAccountRecord[],
     onAccountsUpdated: (merged: DecryptedAccountRecord[]) => Promise<void>
   ) => Promise<void>;
-  resetSync: () => void;
+  resetSync: () => Promise<void>;
 }
 
 export const useSyncStore = create<SyncStoreState>((set, get) => ({
@@ -26,14 +27,29 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
   conflictsCount: 0,
   syncError: null,
 
-  queueMutation: (mutation: SyncMutation) => {
+  queueMutation: async (mutation: SyncMutation) => {
+    // Durable Write-Ahead Journaling: persist to disk first
+    const enqueued = await PersistentMutationQueue.enqueue({
+      accountId: mutation.id,
+      vaultId: mutation.vault_id,
+      action: mutation.action,
+      expectedVersion: mutation.expectedVersion,
+      nextVersion: mutation.nextVersion,
+      ciphertext: mutation.ciphertext,
+      nonce: mutation.nonce,
+      crypto_version: mutation.crypto_version,
+      deleted_at: mutation.deleted_at,
+    });
+    mutation.mutationId = enqueued.mutationId;
+
     set((state) => ({
       pendingMutations: [...state.pendingMutations, mutation],
       syncState: 'pending',
     }));
   },
 
-  resetSync: () => {
+  resetSync: async () => {
+    await PersistentMutationQueue.clearQueue();
     set({
       syncState: 'idle',
       lastSyncedAt: null,
@@ -61,10 +77,27 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
       // Save reconciled accounts to local encrypted storage
       await onAccountsUpdated(result.updatedAccounts);
 
+      // Reload remaining/failed mutations from persistent queue
+      const remainingJournal = await PersistentMutationQueue.loadJournal();
+      const mappedRemaining: SyncMutation[] = remainingJournal.map((m) => ({
+        id: m.accountId,
+        vault_id: m.vaultId,
+        action: m.action,
+        expectedVersion: m.expectedVersion,
+        nextVersion: m.nextVersion,
+        ciphertext: m.ciphertext,
+        nonce: m.nonce,
+        crypto_version: m.crypto_version,
+        deleted_at: m.deleted_at,
+        timestamp: m.createdAt,
+        retryCount: m.retryCount,
+        mutationId: m.mutationId,
+      }));
+
       set({
         syncState: result.conflictsCount > 0 ? 'conflict' : 'synced',
         lastSyncedAt: new Date().toISOString(),
-        pendingMutations: [],
+        pendingMutations: mappedRemaining,
         conflictsCount: result.conflictsCount,
         syncError: null,
       });

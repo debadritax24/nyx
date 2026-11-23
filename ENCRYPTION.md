@@ -131,3 +131,15 @@ When concurrent modifications or delete-versus-update conflicts occur:
 1. The reconciler generates a fresh, cryptographically secure UUID (`crypto.randomUUID()`) for the preserved record.
 2. The decrypted payload is re-encrypted via `reencryptForkedAccount()` using a fresh 96-bit random nonce and newly constructed AAD: `nyx-account:<fresh_uuid>:v1`.
 3. Ciphertext from the prior identity is **never** copied or relocated. Any attempt to substitute ciphertext across account IDs fails AES-256-GCM authentication tag verification.
+
+### 6.5 Master Vault Key Rotation ($K_v \to K_v'$)
+Implemented in `VaultService.rotateVaultKey` (`frontend/src/services/vaultService.ts`):
+1. **Fresh 256-bit Key Generation:** Generates a new random symmetric key $K_v'$ via CSPRNG.
+2. **Local Re-Encryption:** All account records are decrypted using $K_v$ and re-encrypted with $K_v'$ using freshly generated 96-bit nonces and bound AAD.
+3. **Argon2id Re-Wrapping:** $K_v'$ is wrapped under the Master Passphrase and emergency recovery code with fresh salts and nonces.
+4. **Atomic Cloud Sync:** Remote `vaults` envelope is updated, and re-encrypted accounts are pushed via atomic CAS.
+5. **Keystore Re-Binding:** Local Android Keystore is updated with $K_v'$. Any revoked or stolen device possessing only the old key $K_v$ cannot decrypt future records.
+
+### 6.6 Memory Zeroization & Engine Lifetime Limits
+- **ArrayBuffer Wiping:** Keys in `Uint8Array` format are wiped using `zeroMemory()` (`buffer.fill(0)`).
+- **V8 Engine Garbage Collection Limitation:** JavaScript strings are immutable and cannot be overwritten in RAM. Their lifetime is managed by the engine's garbage collector. Zeroization is therefore documented as **best-effort**, with application defense-in-depth relying on `FLAG_SECURE` screen privacy and Android sandbox isolation.

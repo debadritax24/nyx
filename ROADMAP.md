@@ -74,8 +74,22 @@
 
 ---
 
-## Phase 7: Post-Launch & Enterprise Extensions [ROADMAP]
-- [ ] Hardware FIDO2 / WebAuthn security key integration (YubiKey via NFC/USB).
+## Phase 7: Android Device Validation & Crash-Safe Sync [COMPLETED]
+- [x] Hardened database stored procedure `sync_push_account` with `unique_violation` trapping (Migration 20261123000004).
+- [x] Eliminated missing-row concurrent creation race conditions with deterministic `23514` CAS error handling.
+- [x] Built crash-safe offline mutation queue `PersistentMutationQueue` with Write-Ahead Journaling (WAL) and 5-stage state machine.
+- [x] Implemented startup crash recovery routine `recoverInterruptedMutations` with remote write status verification.
+- [x] Implemented bounded exponential backoff with randomized jitter and non-retryable failure categorization.
+- [x] Implemented `VaultService.rotateVaultKey` supporting atomic local re-encryption and remote envelope rotation.
+- [x] Added 7-point database concurrency and security test matrix in `rls.test.js` and `live_integration.test.js`.
+- [x] Added automated crash simulation tests (`queueCrashRecovery.test.ts`) and key rotation tests (`keyRotation.test.ts`).
+- [x] Transparently documented physical hardware verification limitations (`NOT TESTED`) and EAS cloud credential scope.
+
+---
+
+## Phase 8: Controlled Beta & Field Validation [ROADMAP]
+- [ ] Connect physical Android test devices via ADB to execute Maestro automated flows.
+- [ ] Test hardware TEE / StrongBox Keystore key invalidation upon new biometric enrollment.
 - [ ] Supabase Realtime channel subscription for instant multi-device change notifications.
 - [ ] Automated encrypted cloud backup exports to Google Drive / WebDAV.
 - [ ] Google Play Store and F-Droid automated deployment pipeline via GitHub Actions.

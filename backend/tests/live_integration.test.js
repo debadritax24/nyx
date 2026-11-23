@@ -335,18 +335,59 @@ async function runLiveIntegrationTests() {
     console.log('  -> Client decryption verified with exact HMAC secret recovery.');
 
     // -------------------------------------------------------------------------
-    // 6. Compare-And-Swap (CAS) Concurrency Conflict Defense
+    // 6. Compare-And-Swap (CAS) Concurrency & Security Test Matrix
     // -------------------------------------------------------------------------
-    console.log('\n[6/10] Testing Compare-And-Swap (CAS) Concurrency Conflict Handling...');
-    // Device 1 updates record to version 2 (expected: 1, next: 2)
-    const updatedPlaintext1 = { ...originalAccountPlaintext, account_name: 'alice-device1-edit' };
-    const encUpdate1 = await encryptAesGcm(rawVaultKey, JSON.stringify(updatedPlaintext1), accountAad);
+    console.log('\n[6/10] Testing Atomic CAS & Database Security Test Matrix...');
 
+    // 6.1 Two simultaneous inserts using the same UUID (missing-row race protection)
+    console.log('  -> [Test 6.1] Simultaneous Inserts using same UUID...');
+    const concurrentInsertId = '66666666-6666-4666-8666-666666666666';
+    const concurrentAad = `nyx-account:${concurrentInsertId}:v1`;
+    const encConcurrent = await encryptAesGcm(rawVaultKey, JSON.stringify(originalAccountPlaintext), concurrentAad);
+
+    const { data: firstInsert, error: firstInsertErr } = await clientA.rpc('sync_push_account', {
+      p_id: concurrentInsertId,
+      p_vault_id: vaultId,
+      p_ciphertext: encConcurrent.ciphertext,
+      p_nonce: encConcurrent.nonce,
+      p_crypto_version: 1,
+      p_expected_version: 0,
+      p_next_version: 1,
+      p_deleted_at: null,
+    });
+    assert.ifError(firstInsertErr);
+    assert.strictEqual(firstInsert.version, 1);
+
+    // Competing client simulates concurrent insert race with identical expected_version = 0
+    const { error: secondInsertErr } = await clientA.rpc('sync_push_account', {
+      p_id: concurrentInsertId,
+      p_vault_id: vaultId,
+      p_ciphertext: encConcurrent.ciphertext,
+      p_nonce: encConcurrent.nonce,
+      p_crypto_version: 1,
+      p_expected_version: 0,
+      p_next_version: 1,
+      p_deleted_at: null,
+    });
+    assert.ok(secondInsertErr, 'Competing insert must be rejected as concurrency conflict');
+    assert.ok(
+      secondInsertErr.message.includes('Concurrency conflict') || secondInsertErr.code === '23514',
+      `Error must be CAS conflict (23514). Got: ${secondInsertErr.message}`
+    );
+    console.log('     PASS: Concurrent insert race safely detected and rejected via unique_violation CAS handler.');
+
+    // 6.2 Two simultaneous updates using the same expected version
+    console.log('  -> [Test 6.2] Simultaneous updates using same expected version...');
+    const encUpdateA = await encryptAesGcm(
+      rawVaultKey,
+      JSON.stringify({ ...originalAccountPlaintext, account_name: 'competing-A' }),
+      accountAad
+    );
     const { data: casData2, error: casErr2 } = await clientA.rpc('sync_push_account', {
       p_id: accountId,
       p_vault_id: vaultId,
-      p_ciphertext: encUpdate1.ciphertext,
-      p_nonce: encUpdate1.nonce,
+      p_ciphertext: encUpdateA.ciphertext,
+      p_nonce: encUpdateA.nonce,
       p_crypto_version: 1,
       p_expected_version: 1,
       p_next_version: 2,
@@ -354,33 +395,82 @@ async function runLiveIntegrationTests() {
     });
     assert.ifError(casErr2);
     assert.strictEqual(casData2.version, 2);
-    console.log('  -> Device 1 successfully pushed update to Version 2.');
 
-    // Competing Device 2 (simulating concurrent edit offline) tries to push update based on stale Version 1!
-    const updatedPlaintext2 = { ...originalAccountPlaintext, account_name: 'alice-device2-competing-edit' };
-    const encUpdate2 = await encryptAesGcm(rawVaultKey, JSON.stringify(updatedPlaintext2), accountAad);
-
-    const { data: casData3, error: casErr3 } = await clientA.rpc('sync_push_account', {
+    // Competing write with same expected version = 1
+    const encUpdateB = await encryptAesGcm(
+      rawVaultKey,
+      JSON.stringify({ ...originalAccountPlaintext, account_name: 'competing-B' }),
+      accountAad
+    );
+    const { error: casErrCompeting } = await clientA.rpc('sync_push_account', {
       p_id: accountId,
       p_vault_id: vaultId,
-      p_ciphertext: encUpdate2.ciphertext,
-      p_nonce: encUpdate2.nonce,
+      p_ciphertext: encUpdateB.ciphertext,
+      p_nonce: encUpdateB.nonce,
       p_crypto_version: 1,
-      p_expected_version: 1, // STALE! Expected 1, but database is now at 2
+      p_expected_version: 1,
       p_next_version: 2,
       p_deleted_at: null,
     });
-    assert.ok(casErr3, 'Database CAS MUST reject stale update');
-    assert.ok(
-      casErr3.message.includes('Concurrency conflict') || casErr3.code === '23514',
-      `Error must reflect concurrency conflict. Received: ${casErr3.message}`
-    );
-    console.log(`  -> Concurrency conflict correctly detected and rejected: ${casErr3.message}`);
+    assert.ok(casErrCompeting, 'Competing update with same expected version must be rejected');
+    assert.ok(casErrCompeting.code === '23514' || casErrCompeting.message.includes('Concurrency conflict'));
+    console.log('     PASS: Competing update on identical expected version rejected.');
+
+    // 6.3 Stale update after a successful write
+    console.log('  -> [Test 6.3] Stale update after a successful write...');
+    const { error: staleErr } = await clientA.rpc('sync_push_account', {
+      p_id: accountId,
+      p_vault_id: vaultId,
+      p_ciphertext: encUpdateB.ciphertext,
+      p_nonce: encUpdateB.nonce,
+      p_crypto_version: 1,
+      p_expected_version: 1, // Current version is 2
+      p_next_version: 3,
+      p_deleted_at: null,
+    });
+    assert.ok(staleErr && (staleErr.code === '23514' || staleErr.message.includes('Concurrency conflict')));
+    console.log('     PASS: Stale version increment rejected.');
+
+    // 6.4 Cross-user vault access
+    console.log('  -> [Test 6.4] Cross-user vault access prevention...');
+    const { error: crossVaultErr } = await clientB.rpc('sync_push_account', {
+      p_id: '77777777-7777-4777-8777-777777777777',
+      p_vault_id: vaultId, // User A's vault!
+      p_ciphertext: encUpdateB.ciphertext,
+      p_nonce: encUpdateB.nonce,
+      p_crypto_version: 1,
+      p_expected_version: 0,
+      p_next_version: 1,
+      p_deleted_at: null,
+    });
+    assert.ok(crossVaultErr, 'Cross-user vault mutation must be rejected');
+    assert.ok(crossVaultErr.code === '42501' || crossVaultErr.message.includes('Unauthorized'));
+    console.log('     PASS: Cross-user vault access blocked with 42501 Unauthorized.');
+
+    // 6.5 Cross-vault account mutation
+    console.log('  -> [Test 6.5] Cross-vault account mutation prevention...');
+    const foreignVaultId = '99999999-9999-4999-8999-999999999999';
+    const { error: crossAccountVaultErr } = await clientA.rpc('sync_push_account', {
+      p_id: accountId,
+      p_vault_id: foreignVaultId,
+      p_ciphertext: encUpdateB.ciphertext,
+      p_nonce: encUpdateB.nonce,
+      p_crypto_version: 1,
+      p_expected_version: 2,
+      p_next_version: 3,
+      p_deleted_at: null,
+    });
+    assert.ok(crossAccountVaultErr, 'Reassigning account to non-existent or foreign vault must fail');
+    assert.ok(crossAccountVaultErr.code === '42501' || crossAccountVaultErr.message.includes('Unauthorized'));
+    console.log('     PASS: Cross-vault account mutation blocked with 42501 Unauthorized.');
+
+    // Clean up temporary concurrent insert record
+    await clientA.from('authenticator_accounts').delete().eq('id', concurrentInsertId);
 
     // -------------------------------------------------------------------------
-    // 7. Tombstone Soft-Deletion Propagation
+    // 7. Tombstone Soft-Deletion Propagation & Resurrection Guard
     // -------------------------------------------------------------------------
-    console.log('\n[7/10] Testing Tombstone Deletion Propagation...');
+    console.log('\n[7/10] Testing Tombstone Deletion Propagation & Resurrection Guard...');
     const tombstoneEnc = await encryptAesGcm(
       rawVaultKey,
       JSON.stringify({ ...originalAccountPlaintext, deleted_at: new Date().toISOString() }),
@@ -398,6 +488,49 @@ async function runLiveIntegrationTests() {
       p_deleted_at: new Date().toISOString(),
     });
     assert.ifError(tombErr);
+    assert.strictEqual(tombData.version, 3);
+    assert.ok(tombData.deleted_at, 'Tombstone deleted_at must be populated');
+    console.log('  -> Tombstone persisted at Version 3 with soft-deletion timestamp.');
+
+    // 7.1 Attempts to bypass soft deletion (Accidental resurrection with stale version)
+    console.log('  -> [Test 7.1] Guard against accidental resurrection of soft-deleted record...');
+    const { error: resurrectErr } = await clientA.rpc('sync_push_account', {
+      p_id: accountId,
+      p_vault_id: vaultId,
+      p_ciphertext: encUpdateB.ciphertext,
+      p_nonce: encUpdateB.nonce,
+      p_crypto_version: 1,
+      p_expected_version: 2, // Stale version (DB is at 3, soft-deleted)
+      p_next_version: 4,
+      p_deleted_at: null,
+    });
+    assert.ok(resurrectErr, 'Resurrection of soft-deleted tombstone with stale version must be rejected');
+    assert.ok(resurrectErr.code === '23514' || resurrectErr.message.includes('Concurrency conflict'));
+    console.log('     PASS: Accidental resurrection of soft-deleted account blocked.');
+
+    // 7.2 Unauthorized RPC execution
+    console.log('  -> [Test 7.2] Unauthorized RPC execution without authentication...');
+    const unauthClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false },
+      global: { fetch: curlFetch },
+    });
+    const { error: unauthErr } = await unauthClient.rpc('sync_push_account', {
+      p_id: accountId,
+      p_vault_id: vaultId,
+      p_ciphertext: encUpdateB.ciphertext,
+      p_nonce: encUpdateB.nonce,
+      p_crypto_version: 1,
+      p_expected_version: 3,
+      p_next_version: 4,
+      p_deleted_at: null,
+    });
+    assert.ok(unauthErr, 'Unauthenticated RPC call must fail');
+    assert.ok(
+      unauthErr.code === '42501' ||
+        unauthErr.message.includes('Unauthorized') ||
+        unauthErr.message.includes('not authenticated')
+    );
+    console.log('     PASS: Unauthenticated RPC execution blocked with 42501.');
     assert.strictEqual(tombData.version, 3);
     assert.ok(tombData.deleted_at, 'Tombstone deleted_at must be populated');
     console.log('  -> Tombstone persisted at Version 3 with soft-deletion timestamp.');

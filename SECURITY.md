@@ -124,10 +124,26 @@ To completely evict a compromised hardware device holding $K_v$, a full Vault Ke
 | **Tombstone Timestamps** | **YES** | Required for deterministic deletion propagation. |
 | **Device Label & Platform** | **YES** | User-defined label (e.g. "Pixel 8 Pro") for session audit. |
 
-### 7.4 Concurrency & Tamper Resistance
+### 7.4 Concurrency, CAS Race Mitigation & Tamper Resistance
 - **Atomic Compare-And-Swap (CAS):** Implemented via `sync_push_account` stored procedure with `FOR UPDATE` row locking. Database compares `expected_version` against current database version, rejecting race conditions with SQLSTATE `23514`.
-- **Tombstone Anti-Resurrection:** Soft deletions (`deleted_at`) ensure peer devices never resurrect deleted accounts after coming online.
+- **Missing-Row Insertion Race Protection (Migration 4):** Standard `FOR UPDATE` does not lock non-existent rows. In `sync_push_account` (migration `20261123000004_safe_concurrent_cas.sql`), concurrent insertions targeting the same UUID are wrapped in a sub-transaction trapping `unique_violation` (23505). If another transaction won the race, it re-locks the row and raises a standard CAS concurrency conflict (`23514`), allowing clean client reconciliation without unhandled database exceptions.
+- **Tombstone Anti-Resurrection & Accidental Resurrection Guard:** Soft deletions (`deleted_at`) ensure peer devices never resurrect deleted accounts after coming online. In `sync_push_account`, attempts to update a soft-deleted tombstone with a stale version or without monotonic version increment are rejected with `23514`.
 - **Delete-vs-Update Conflict Preservation:** If a device modified an account while offline and encounters a remote tombstone, the modified account is automatically preserved as a recovered copy (`(Restored from Deleted Copy)`), eliminating data loss.
+
+### 7.5 Crash-Safe Persistent Mutation Queue (Write-Ahead Journaling)
+- **Durable State Machine:** The offline queue in `PersistentMutationQueue` implements a 5-stage state machine:
+  $$\text{ENQUEUED} \longrightarrow \text{PROCESSING} \longrightarrow \text{ACKNOWLEDGED} \quad (\text{or } \text{RETRYING} / \text{PERMANENTLY\_FAILED})$$
+- **Write-Ahead Journaling (WAL):** Every queue state transition is written to `nyx_mutation_queue_v1.journal` via atomic temp-write and rename before remote network dispatch.
+- **Interruption Recovery on Startup:** If the application terminates or is killed by the OS during an active upload (leaving mutations in `PROCESSING`), `recoverInterruptedMutations` queries the server on app reboot. If the remote version indicates the server write succeeded before local acknowledgement, the mutation is cleanly acknowledged. If not, it is safely reset to `ENQUEUED` for idempotent retry.
+- **Bounded Backoff & Error Classification:** Transient network failures trigger bounded exponential backoff ($500\text{ ms} \times 2^{\text{retry}} + \text{jitter}$, max 30s). Permanent failures (`42501 Unauthorized`) transition immediately to `PERMANENTLY_FAILED`, preventing infinite retry loops.
+
+### 7.6 Android Hardware Keystore & Physical Device Reality
+- **Physical Hardware Verification Status:** `NOT TESTED (SIMULATOR / MOCK ENVIRONMENT)`. In this automated build environment, no physical Android device is connected (`adb devices` returned empty). While Expo SecureStore delegates to Android Keystore (`EncryptedSharedPreferences`), hardware-backed TEE/StrongBox enforcement (`KeyProperties.SECURITY_LEVEL_STRONGBOX`) and hardware key invalidation cannot be claimed without physical device probe testing.
+- **Biometric Enforcement Boundary:** Biometric unlock in `KeystoreService` is currently gated at the application software level via `expo-local-authentication` before retrieving the key from SecureStore.
+
+### 7.7 JavaScript Memory Lifetime & Best-Effort Zeroization
+- **ArrayBuffer Zeroization:** Raw cryptographic keys stored in `Uint8Array` are explicitly zeroized using `zeroMemory()` (`buffer.fill(0)`) upon vault locking or rotation.
+- **V8 Engine Garbage Collection Limitation:** In JavaScript engines (such as V8 or Hermes), strings (e.g. parsed JSON, intermediate Base32 secrets) are immutable and cannot be manually overwritten in memory. Their lifetime is governed by the engine's garbage collector. Zeroization is therefore documented as **best-effort** at the buffer level, and defense-in-depth relies on `FLAG_SECURE` screen privacy and OS sandbox isolation.
 
 ---
 
@@ -137,17 +153,15 @@ To completely evict a compromised hardware device holding $K_v$, a full Vault Ke
 | :--- | :--- | :--- | :--- |
 | **1. Encryption** | AES-256-GCM with fresh 96-bit nonces & AAD | **VERIFIED** | Verified in `vault.test.ts` & `syncService.test.ts`. Nonce collision tests pass. |
 | **2. Key Management** | 256-bit CSPRNG Vault Key, dual Argon2id wrap | **VERIFIED** | Verified in `recovery.test.ts` & `kdf.test.ts`. Zero plaintext key transmission. |
-| **3. Recovery** | 24-word BIP-39 recovery code + Passphrase | **VERIFIED** | Verified in `recovery.test.ts`. 256-bit entropy verified. |
-| **4. Authentication** | Supabase Auth session & token isolation | **VERIFIED** | Verified in `live_integration.test.js`. Tokens stored in SecureStore. |
-| **5. Row-Level Security** | PostgreSQL RLS enabled & forced on all tables | **VERIFIED** | Verified in `rls.test.js` & `live_integration.test.js` (cross-tenant 0 rows). |
-| **6. Device Enrollment** | Zero-escrow secondary enrollment | **VERIFIED** | Verified in `vaultService.ts` & `enrollment.tsx`. |
-| **7. Device Revocation** | Revocation cuts cloud query access | **VERIFIED** | Verified in `live_integration.test.js` (device deletion confirmed). |
+| **3. Key Rotation** | Atomic $K_v \to K_v'$ rotation with local/remote re-encryption | **VERIFIED** | Verified in `keyRotation.test.ts` & `vaultService.ts`. |
+| **4. Queue Durability** | Crash-safe persistent WAL mutation queue & recovery | **VERIFIED** | Verified in `queueCrashRecovery.test.ts` & `queueService.ts`. |
+| **5. CAS Concurrency** | Atomic CAS with `unique_violation` insertion race fix | **VERIFIED** | Verified in `live_integration.test.js` (Test 6.1-6.5) & `rls.test.js`. |
+| **6. Row-Level Security** | PostgreSQL RLS enabled & forced on all tables | **VERIFIED** | Verified in `rls.test.js` & `live_integration.test.js` (cross-tenant 0 rows). |
+| **7. Device Revocation** | Revocation cuts cloud query access + documented rotation | **VERIFIED** | Verified in `live_integration.test.js` (device deletion confirmed). |
 | **8. Offline Functionality** | 100% offline OTP generation & local vault | **VERIFIED** | Verified in `rfc6238.test.ts` & `storage.test.ts`. Zero network required. |
-| **9. Data Deletion** | Soft-deletion tombstones & anti-resurrection | **VERIFIED** | Verified in `syncService.test.ts` & `live_integration.test.js`. |
-| **10. Synchronization** | Atomic Compare-And-Swap (CAS) with row locking | **VERIFIED** | Stored procedure `sync_push_account` verified in `live_integration.test.js`. |
-| **11. Backup / Restore** | Encrypted local vault backup with AAD | **VERIFIED** | Verified in `storage.test.ts` (atomic temp write + rename). |
-| **12. Error Handling** | Zero secrets in logs or error messages | **VERIFIED** | Verified: error messages only contain UUIDs and versions. |
-| **13. Privacy** | `FLAG_SECURE` screen privacy & clipboard purging | **VERIFIED** | Verified in `app/_layout.tsx` & `index.tsx` (30s auto-purge). |
-| **14. Permissions** | Minimal permissions (CAMERA, BIOMETRIC; AUDIO blocked) | **VERIFIED** | Verified via `npx expo config --type public` (`RECORD_AUDIO` blocked). |
-| **15. Dependencies** | Zero high/critical runtime vulnerabilities | **VERIFIED** | Verified via `npm audit --omit=dev` (0 vulnerabilities in runtime packages). |
-| **16. Release Signing** | EAS build profiles configured for APK & AAB | **VERIFIED** | Verified in `eas.json` (development, preview APK, production AAB). |
+| **9. Hardware Keystore** | Android Keystore / StrongBox physical device probe | **NOT TESTED** | Absence of physical device in automated sandbox. Documented as limitation. |
+| **10. Memory Zeroing** | Best-effort ArrayBuffer wiping upon vault lock | **VERIFIED** | Verified in `vault.test.ts` (`zeroMemory` fills Uint8Array with 0). |
+| **11. Privacy** | `FLAG_SECURE` screen privacy & clipboard purging | **VERIFIED** | Verified in `app/_layout.tsx` & `index.tsx` (30s auto-purge). |
+| **12. Permissions** | Minimal permissions (CAMERA, BIOMETRIC; AUDIO blocked) | **VERIFIED** | Verified via `npx expo config --type prebuild` (`RECORD_AUDIO` blocked). |
+| **13. Dependencies** | Zero runtime high/critical vulnerabilities | **VERIFIED** | Verified via `npm audit --omit=dev`. |
+| **14. Release Signing** | EAS build profiles configured for APK & AAB | **VERIFIED** | Verified in `eas.json` (preview APK, production AAB). |

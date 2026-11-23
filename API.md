@@ -87,9 +87,29 @@ const { data, error } = await supabase.rpc('sync_push_account', {
   - `p_deleted_at` (TIMESTAMPTZ, optional): Tombstone soft-deletion timestamp.
 - **Error Handling:**
   - If database version does not match `p_expected_version`, raises SQLSTATE `23514` with message `Concurrency conflict: Expected version X but found version Y`.
+  - If two devices concurrently insert the same UUID (`p_expected_version: 0`), the race condition is trapped via `unique_violation` and raises SQLSTATE `23514` with message `Concurrency conflict: Record X was concurrently created at version Y`.
+  - If target vault does not belong to user, raises SQLSTATE `42501` (`Unauthorized: Target vault ...`).
+  - If record is soft-deleted and client attempts stale update, raises SQLSTATE `23514` (`Concurrency conflict: Account ... is soft-deleted`).
   - Client retrieves current remote row and invokes deterministic reconciliation.
 
-### 3.2 Pull Modified Accounts
+### 3.2 Persistent Mutation Queue (WAL)
+Managed by `PersistentMutationQueue` (`frontend/src/services/queueService.ts`):
+- `enqueue(mutation)`: Atomically appends mutation to `nyx_mutation_queue_v1.journal`.
+- `loadJournal()`: Reads all pending/processing/retrying mutations from disk.
+- `markProcessing(mutationId)`: Sets state to `PROCESSING` before network dispatch.
+- `acknowledge(mutationId)`: Purges acknowledged mutation from disk.
+- `recordFailure(mutationId, errorMsg, isPermanent)`: Bounded backoff ($500\text{ms} \times 2^{\text{retry}} + \text{jitter}$) or marks `PERMANENTLY_FAILED`.
+- `recoverInterruptedMutations(checkRemoteCallback)`: Startup crash-recovery reconciling incomplete uploads.
+
+### 3.3 Master Vault Key Rotation
+Managed by `VaultService.rotateVaultKey` (`frontend/src/services/vaultService.ts`):
+- Generates new 256-bit symmetric vault key $K_v'$.
+- Re-encrypts all local accounts with fresh 96-bit nonces and bound AAD.
+- Wraps $K_v'$ under passphrase and recovery code via Argon2id.
+- Updates Supabase `vaults` row and pushes re-encrypted accounts via atomic CAS.
+- Updates Android Keystore with $K_v'$.
+
+### 3.4 Pull Modified Accounts
 Retrieves encrypted records updated since the client's last synchronization timestamp.
 ```typescript
 let query = supabase

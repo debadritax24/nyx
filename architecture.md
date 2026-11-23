@@ -218,7 +218,14 @@ flowchart TD
 
 ### 5.4 Device Revocation Boundaries & Key Rotation Protocol
 - **Revocation Boundary:** Deleting a record from `devices` table purges sync query authorization, but does **not** cryptographically erase the Vault Key from hardware in an adversary's physical possession.
-- **Vault Key Rotation:** Evicting a compromised device requires generating a new 256-bit key $K_v'$, re-encrypting all active accounts under $K_v'$, updating passphrase and recovery wrappers, and re-enrolling authorized devices.
+- **Vault Key Rotation ($K_v \to K_v'$):** Implemented in `VaultService.rotateVaultKey`. Evicting a compromised device requires generating a new 256-bit key $K_v'$, re-encrypting all active accounts under $K_v'$ locally, updating passphrase and recovery wrappers, pushing updates via atomic CAS, and re-binding local Keystore.
+
+### 5.5 Crash-Safe Offline Mutation Queue (Write-Ahead Journaling)
+Offline mutations are managed via `PersistentMutationQueue` (`frontend/src/services/queueService.ts`):
+- **WAL Journaling:** Mutations are written to disk (`nyx_mutation_queue_v1.journal`) using atomic temporary write + rename before remote dispatch.
+- **State Machine:** `ENQUEUED` -> `PROCESSING` -> `ACKNOWLEDGED` (or `RETRYING` with jittered backoff, or `PERMANENTLY_FAILED`).
+- **Startup Crash Recovery:** Detects mutations interrupted in `PROCESSING` state during application kill or power failure, queries the server to determine whether remote write completed, and acknowledges or resets to `ENQUEUED`.
+- **Deduplication:** Folds multiple offline updates for the same account to prevent queue bloat.
 
 ---
 

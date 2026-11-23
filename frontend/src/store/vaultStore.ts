@@ -193,7 +193,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     // Queue sync mutation if vaultId exists
     if (vaultId) {
       const encrypted = await SyncService.encryptAccountForSync(vaultKey, newRecord);
-      useSyncStore.getState().queueMutation({
+      await useSyncStore.getState().queueMutation({
         id: newRecord.id,
         vault_id: vaultId,
         action: 'UPSERT',
@@ -228,7 +228,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
         updated_at: new Date().toISOString(),
       };
       const encrypted = await SyncService.encryptAccountForSync(vaultKey, tombstoneRecord);
-      useSyncStore.getState().queueMutation({
+      await useSyncStore.getState().queueMutation({
         id: target.id,
         vault_id: vaultId,
         action: 'DELETE',
@@ -268,7 +268,7 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     if (vaultId && modifiedRecord) {
       const rec = modifiedRecord as DecryptedAccountRecord;
       const encrypted = await SyncService.encryptAccountForSync(vaultKey, rec);
-      useSyncStore.getState().queueMutation({
+      await useSyncStore.getState().queueMutation({
         id: rec.id,
         vault_id: vaultId,
         action: 'UPSERT',

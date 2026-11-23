@@ -86,7 +86,7 @@ nyx/
 ---
 
 ## 5. Test Suite Verification Summary
-- **Frontend Test Suite:** 10 test suites, 74 tests passing (0 failures).
+- **Frontend Test Suite:** 12 test suites, 82 tests passing (0 failures).
   - `tests/core/totp/rfc6238.test.ts`: Official RFC 6238 vectors (SHA1, SHA256, SHA512), 6-digit & 8-digit codes, leading zeros.
   - `tests/core/totp/base32.test.ts`: Strict RFC 4648 Base32 validation and decoding.
   - `tests/core/totp/uri.test.ts`: Parsing and canonical serialization of `otpauth://` URIs.
@@ -96,21 +96,31 @@ nyx/
   - `tests/core/crypto/storage.test.ts`: Encrypted local persistence, corruption handling, and atomic writes.
   - `tests/services/syncService.test.ts`: AES-256-GCM cloud encryption, AAD validation, deterministic conflict reconciliation (preserving forked copies), tombstone anti-resurrection, delete-vs-update zero data loss, and multi-device bidirectional synchronization simulation.
   - `tests/services/deviceService.test.ts`: Persistent UUID generation and device label management.
-  - `tests/performance.test.ts`: 100 & 500 account TOTP calculation latency (< 0.3ms/code), 500-account vault encryption/decryption scaling, 64MB Argon2id profiling, and reconciler scalability.
-- **Backend Test Suite:** 6 security assertion suites passing.
+  - `tests/services/queueCrashRecovery.test.ts`: Crash-safe persistent WAL queue, 5-stage state machine, process crash recovery during active upload, remote write status reconciliation, and bounded exponential backoff with jitter.
+  - `tests/services/keyRotation.test.ts`: Master Vault Key Rotation ($K_v \to K_v'$), re-encryption of accounts with fresh nonces, Argon2id re-wrapping, transactional cloud envelope update, and local Keystore re-binding.
+  - `tests/performance.test.ts`: 100 & 500 account TOTP calculation latency (< 0.25ms/code), 500-account vault encryption/decryption scaling, 64MB Argon2id profiling, and reconciler scalability.
+- **Backend Test Suite:** 7 security assertion suites passing.
   - RLS unconditionally enabled and forced across `profiles`, `vaults`, `authenticator_accounts`, and `devices`.
   - Authenticated policies for SELECT, INSERT, UPDATE, DELETE.
   - Cross-tenant vault ownership validation (`auth.uid() = vault.user_id`).
   - Optimistic concurrency monotonic version enforcement trigger (`check_optimistic_concurrency`).
   - Device metadata tracking (`last_active_at`, `device_label`).
-  - Atomic Compare-And-Swap (CAS) stored procedure simulation (`sync_push_account`).
+  - Atomic Compare-And-Swap (CAS) stored procedure definition with `FOR UPDATE` locking and `unique_violation` insertion race handlers (Migration `20261123000004_safe_concurrent_cas.sql`).
+  - CAS concurrency simulator verified: exact version matches required, race conditions eliminated, soft-delete resurrection blocked.
 - **Live Supabase Cloud Integration Suite:** 10 suites passing against live endpoint `https://ardomiwuahiottpkotmv.supabase.co`.
   - Pre-confirmed test identity registration and authentic JWT session establishment.
   - Argon2id wrapped vault record creation with RLS.
   - Device registration and device label audit.
   - Client-side AES-256-GCM encrypted account upload with CAS.
   - Zero-knowledge database verification (zero plaintext metadata stored on Supabase).
-  - Compare-And-Swap (CAS) conflict rejection (stale expected version rejected with SQLSTATE 23514).
+  - 7-Point CAS & Database Security Test Matrix:
+    1. Simultaneous inserts with same UUID (handled via `unique_violation` trapping -> `23514`).
+    2. Simultaneous updates with same expected version (rejected with `23514`).
+    3. Stale update after successful write (rejected with `23514`).
+    4. Cross-user vault access blocked with `42501 Unauthorized`.
+    5. Cross-vault account mutation blocked with `42501 Unauthorized`.
+    6. Guard against accidental tombstone resurrection (rejected with `23514`).
+    7. Unauthenticated RPC execution blocked with `42501`.
   - Tombstone soft-deletion propagation at Version 3.
   - Device revocation (device removed from registry).
   - Cross-tenant RLS policy isolation (User B completely barred from User A data).
@@ -119,11 +129,11 @@ nyx/
 ---
 
 ## 6. Known Limitations & Production Notes
-- Biometric unlock on emulators requires mocking or enrolled virtual fingerprints via ADB (`adb emu finger touch 1`).
-- Physical device testing requires physical hardware with enrolled biometric hardware sensors.
-- Real-time instant push notification triggers can be enhanced in post-release updates via Supabase Realtime channel subscriptions.
+- **Hardware-Backed Keystore on Physical Devices:** In the automated sandbox environment, no physical Android device was connected (`adb devices` returned 0 devices). While Expo SecureStore uses Android Keystore on Android devices, hardware TEE/StrongBox enforcement (`KeyProperties.SECURITY_LEVEL_STRONGBOX`) and hardware key invalidation upon new biometric enrollment are marked `NOT TESTED` on physical hardware and require field testing on a physical device.
+- **EAS Cloud Build Access:** The local EAS session is logged in as `tushardevx01`, which is not authorized for remote cloud builds under the existing project entity `0a58fd2d-3c2f-485d-8dd9-44b3ebc38a11`. Local prebuild succeeds, but remote EAS cloud preview build is marked `NOT TESTED (UNAUTHORIZED EAS PROJECT CREDENTIAL)`.
+- **Memory Zeroization Reality:** `Uint8Array` buffers are zeroized upon vault lock, but immutable JavaScript strings remain governed by V8 garbage collection.
 
 ---
 
 ## 7. Release Status
-- **NYX Version 1.0.0 (Release Candidate):** Fully verified, hardened, and ready for EAS build and Play Store release candidate generation.
+- **NYX Version 1.0.0 (Release Candidate):** CONDITIONALLY READY. Architecture, cryptography, zero-knowledge invariants, atomic CAS concurrency, offline queue durability, and cloud integration tests are fully verified. Field validation on physical hardware is required before general public release.

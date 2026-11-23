@@ -80,12 +80,38 @@ Implemented in `backend/tests/live_integration.test.js`:
 - Tests device registration and metadata tracking in `devices`.
 - Tests client-side encrypted account upload via atomic Compare-And-Swap (CAS) procedure `sync_push_account`.
 - Tests zero-knowledge information disclosure (asserts backend stores no plaintext issuers, usernames, or secrets).
-- Tests Compare-And-Swap concurrency conflict rejection (stale expected version rejected with SQLSTATE `23514`).
+- **7-Point Database Concurrency & Security Test Matrix:**
+  1. Two simultaneous inserts using the same UUID (missing-row race handled via `unique_violation` trapping -> `23514`).
+  2. Two simultaneous updates using the same expected version (competing update rejected with `23514`).
+  3. Stale update after a successful write (rejected with `23514`).
+  4. Cross-user vault access prevention (blocked with `42501 Unauthorized`).
+  5. Cross-vault account mutation prevention (blocked with `42501 Unauthorized`).
+  6. Attempts to bypass soft deletion / tombstone resurrection (rejected with `23514`).
+  7. Unauthorized RPC execution without authentication (blocked with `42501`).
 - Tests tombstone soft-deletion propagation.
 - Tests device revocation.
 - Tests cross-tenant RLS isolation (User B receives 0 rows when querying User A data).
 
-### 6.2 Maestro Android UI Automation Suite
+### 6.2 Offline Queue Durability & Crash Recovery Suite
+Executed by `npm --prefix frontend test -- tests/services/queueCrashRecovery.test.ts`:
+- Tests atomic Write-Ahead Journaling (`nyx_mutation_queue_v1.journal`) state machine transitions.
+- Tests folding intermediate un-sent edits for the same account to prevent queue bloat.
+- Tests tombstone preservation across restarts and offline cycles.
+- Tests recovery of mutations interrupted in `PROCESSING` state by application termination.
+- Tests acknowledgement of mutations where remote server write succeeded before local crash.
+- Tests bounded exponential backoff with randomized jitter on transient network errors.
+- Tests immediate non-retryable transition to `PERMANENTLY_FAILED` on authorization errors (e.g. `42501`).
+
+### 6.3 Master Vault Key Rotation Suite
+Executed by `npm --prefix frontend test -- tests/services/keyRotation.test.ts`:
+- Tests generation of fresh 256-bit symmetric vault key ($K_v'$).
+- Tests re-encryption of all account records with fresh nonces and bound AAD.
+- Tests Argon2id re-wrapping of new key under passphrase and recovery code.
+- Tests transactional cloud update and local Keystore update.
+- Tests unwrap verification with both passphrase and recovery code.
+- Verifies that old key $K_v$ can no longer decrypt newly re-encrypted records.
+
+### 6.4 Maestro Android UI Automation Suite
 Located in `frontend/maestro/`:
 - `01-auth-flow.yaml`: Account creation, login, session persistence, and logout.
 - `02-vault-lifecycle.yaml`: Master passphrase setup, 24-word recovery code confirmation, manual locking, and vault unlock.

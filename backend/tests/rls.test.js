@@ -77,16 +77,28 @@ assert.ok(
   totalSql.includes('v_existing.version != p_expected_version'),
   'Security requirement: sync_push_account must verify expected_version equals current_version'
 );
-console.log('[PASS] Atomic Compare-And-Swap (CAS) stored procedure defined with FOR UPDATE locking');
+assert.ok(
+  totalSql.includes('unique_violation'),
+  'Concurrency requirement: sync_push_account must catch unique_violation to resolve concurrent insert race'
+);
+assert.ok(
+  totalSql.includes('v_existing.deleted_at IS NOT NULL'),
+  'Security requirement: sync_push_account must guard against accidental tombstone resurrection'
+);
+console.log('[PASS] Atomic Compare-And-Swap (CAS) stored procedure defined with FOR UPDATE locking and race handlers');
 
 // 7. Test atomic Compare-And-Swap (CAS) logic simulation
-function simulateCAS(currentVersion, expectedVersion, nextVersion) {
+function simulateCAS(currentVersion, expectedVersion, nextVersion, isDeleted = false, unDeleteRequested = false) {
   if (currentVersion === null) {
     // New record insertion
     if (expectedVersion > 0) {
       throw new Error(`Concurrency conflict: Record does not exist (expected ${expectedVersion})`);
     }
     return nextVersion;
+  }
+  // Soft deletion protection
+  if (isDeleted && unDeleteRequested && expectedVersion < currentVersion) {
+    throw new Error(`Concurrency conflict: Record is soft-deleted at version ${currentVersion}`);
   }
   // Existing record update
   if (currentVersion !== expectedVersion) {
@@ -108,6 +120,8 @@ assert.throws(() => simulateCAS(2, 1, 3), /Expected version 1 but found 2/);
 assert.throws(() => simulateCAS(3, 2, 4), /Expected version 2 but found 3/);
 // Invalid decrement update: REJECTED!
 assert.throws(() => simulateCAS(2, 2, 2), /Next version 2 must be greater than 2/);
+// Attempted resurrection of soft-deleted tombstone with stale expected version: REJECTED!
+assert.throws(() => simulateCAS(3, 2, 4, true, true), /Record is soft-deleted at version 3/);
 console.log('[PASS] CAS concurrency simulator verified: exact version matches required, race conditions eliminated');
 
-console.log('\nAll 6 backend security, RLS, and CAS test suites PASSED.');
+console.log('\nAll 7 backend security, RLS, and CAS test suites PASSED.');

@@ -164,3 +164,9 @@ CREATE INDEX idx_devices_user_id ON devices(user_id);
 4. **Cross-Tenant Vault Integrity:** Migration `20261123000001_harden_rls_policies.sql` guarantees that accounts can only be associated with vaults owned by the authenticated `auth.uid()`, eliminating cross-tenant injection risks.
 5. **Device Metadata Tracking:** Migration `20261123000002_devices_last_active.sql` adds `last_active_at` and `device_label` to the `devices` table, allowing clients to monitor active sessions and identify enrolled hardware.
 6. **Explicit Role Grants:** Migration `20261123000003_atomic_cas_concurrency.sql` explicitly grants table-level CRUD permissions and procedure execution to the `authenticated` role, ensuring operations are evaluated against Row-Level Security policies without table-level permission rejection.
+7. **Safe Concurrent Creation & CAS Hardening:** Migration `20261123000004_safe_concurrent_cas.sql` hardens `sync_push_account`:
+   - Wraps the missing-row insertion path in a sub-transaction trapping `unique_violation` (23505). If two devices concurrently create the same account UUID, the losing transaction re-selects the row with `FOR UPDATE` and raises a standard CAS concurrency conflict (`23514`), preventing unhandled database crashes.
+   - Enforces strict target vault ownership verification (`42501 Unauthorized`).
+   - Prevents cross-user account UUID collisions / hijacking (`42501 Forbidden`).
+   - Guards soft-deleted tombstones against accidental resurrection with stale versions (`23514 Concurrency conflict`).
+   - Verifies cross-vault integrity upon account updates.

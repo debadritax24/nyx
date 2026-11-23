@@ -6,6 +6,7 @@ import {
   decryptAesGcm,
 } from '../core/crypto';
 import { DeviceService } from './deviceService';
+import { PersistentMutationQueue } from './queueService';
 
 export type SyncState = 'idle' | 'pending' | 'syncing' | 'synced' | 'conflict' | 'failed' | 'offline';
 
@@ -34,6 +35,7 @@ export interface SyncMutation {
   deleted_at: string | null;
   timestamp: number;
   retryCount: number;
+  mutationId?: string;
 }
 
 export interface SyncResult {
@@ -313,38 +315,92 @@ export class SyncService {
   }
 
   /**
-   * Executes a full bidirectional sync cycle.
+   * Executes a full bidirectional sync cycle with crash-safe queue recovery.
    */
   static async executeFullSync(
     userId: string,
     vaultKey: Uint8Array,
     localAccounts: DecryptedAccountRecord[],
-    pendingMutations: SyncMutation[],
+    pendingMutations?: SyncMutation[],
     lastSyncedAt?: string
   ): Promise<SyncResult> {
     let pushedCount = 0;
     let conflictsCount = 0;
-    const remainingMutations: SyncMutation[] = [];
     const conflictedAccountIds = new Set<string>();
 
-    // 1. Process pending mutations push
-    for (const mutation of pendingMutations) {
+    // 0. Crash-Safe Startup Recovery:
+    // Inspect and recover any mutations that were interrupted in 'PROCESSING' state by crash / app kill
+    await PersistentMutationQueue.recoverInterruptedMutations(async (accountId, expectedNextVersion) => {
       try {
-        const res = await this.pushMutation(userId, mutation);
-        if (res.success) {
-          pushedCount++;
-        } else if (res.conflict) {
-          conflictsCount++;
-          conflictedAccountIds.add(mutation.id);
-          // Mutation conflicted with a newer remote record; will be reconciled during pull
+        const { data } = await supabase
+          .from('authenticator_accounts')
+          .select('version')
+          .eq('id', accountId)
+          .maybeSingle();
+        return { alreadyCommitted: !!data && data.version >= expectedNextVersion };
+      } catch {
+        return { alreadyCommitted: false };
+      }
+    });
+
+    // 1. Enqueue any in-memory pending mutations into the persistent journal
+    if (pendingMutations && pendingMutations.length > 0) {
+      for (const m of pendingMutations) {
+        if (!m.mutationId) {
+          const enqueued = await PersistentMutationQueue.enqueue({
+            accountId: m.id,
+            vaultId: m.vault_id,
+            action: m.action,
+            expectedVersion: m.expectedVersion,
+            nextVersion: m.nextVersion,
+            ciphertext: m.ciphertext,
+            nonce: m.nonce,
+            crypto_version: m.crypto_version,
+            deleted_at: m.deleted_at,
+          });
+          m.mutationId = enqueued.mutationId;
         }
-      } catch (err) {
-        mutation.retryCount++;
-        remainingMutations.push(mutation);
       }
     }
 
-    // 2. Pull remote records
+    // 2. Fetch all eligible persistent mutations (ENQUEUED or backoff-ready RETRYING)
+    const eligible = await PersistentMutationQueue.getEligibleMutations();
+
+    // 3. Process eligible mutations with transactional journal transitions
+    for (const pMutation of eligible) {
+      await PersistentMutationQueue.markProcessing(pMutation.mutationId);
+      try {
+        const res = await this.pushMutation(userId, {
+          id: pMutation.accountId,
+          vault_id: pMutation.vaultId,
+          action: pMutation.action,
+          expectedVersion: pMutation.expectedVersion,
+          nextVersion: pMutation.nextVersion,
+          ciphertext: pMutation.ciphertext,
+          nonce: pMutation.nonce,
+          crypto_version: pMutation.crypto_version,
+          deleted_at: pMutation.deleted_at,
+          timestamp: pMutation.createdAt,
+          retryCount: pMutation.retryCount,
+          mutationId: pMutation.mutationId,
+        });
+
+        if (res.success) {
+          pushedCount++;
+          await PersistentMutationQueue.acknowledge(pMutation.mutationId);
+        } else if (res.conflict) {
+          conflictsCount++;
+          conflictedAccountIds.add(pMutation.accountId);
+          // Acknowledge conflict from queue; state will reconcile from remote pull
+          await PersistentMutationQueue.acknowledge(pMutation.mutationId);
+        }
+      } catch (err: any) {
+        const isPermanent = err.code === '42501' || err.message?.includes('Unauthorized');
+        await PersistentMutationQueue.recordFailure(pMutation.mutationId, err.message, isPermanent);
+      }
+    }
+
+    // 4. Pull remote records
     const remoteRows = await this.pullAccounts(lastSyncedAt);
     const decryptedRemoteList: DecryptedAccountRecord[] = [];
 
@@ -357,11 +413,11 @@ export class SyncService {
       }
     }
 
-    // 3. Reconcile local and remote records
+    // 5. Reconcile local and remote records
     const reconciliation = this.reconcileAccounts(localAccounts, decryptedRemoteList, conflictedAccountIds);
     conflictsCount += reconciliation.conflictsResolved;
 
-    // 4. Update device sync heartbeat
+    // 6. Update device sync heartbeat
     await DeviceService.updateSyncTimestamp(userId).catch(() => {});
 
     return {
