@@ -100,17 +100,17 @@ nyx/
 
 ## Documentation Directory (`docs/`)
 
-Deep architectural manuals and specifications are organized inside [`docs/`](https://github.com/Tushardevx01/nyx/tree/main/docs):
+Deep architectural manuals and specifications are organized inside [`docs/`](https://github.com/debadritax24/nyx/tree/main/docs):
 
-- **[System Architecture](https://github.com/Tushardevx01/nyx/blob/main/docs/architecture.md):** Complete component topology, state machines, and Mermaid sequence diagrams for enrollment, sync, and recovery.
-- **[Encryption & Key Wrapping](https://github.com/Tushardevx01/nyx/blob/main/docs/encryption.md):** Specification of cryptographic envelopes, Argon2id parameters, AES-256-GCM tag verification, and recovery derivation.
-- **[Security Architecture & Threat Model](https://github.com/Tushardevx01/nyx/blob/main/docs/security.md):** Adversarial audit findings, hardware boundary threat analysis, device revocation, and rotation guarantees.
-- **[Database Schema & Sync](https://github.com/Tushardevx01/nyx/blob/main/docs/database.md):** Table schemas (`profiles`, `vaults`, `authenticator_accounts`, `devices`), RLS policy definitions, and CAS concurrency procedures.
-- **[API Reference](https://github.com/Tushardevx01/nyx/blob/main/docs/api.md):** Supabase REST/RPC interfaces and TypeScript service contracts.
-- **[Testing Strategy](https://github.com/Tushardevx01/nyx/blob/main/docs/testing.md):** RFC vector test suites, failure injection test plans, and automated verification matrices.
-- **[Local Development Guide](https://github.com/Tushardevx01/nyx/blob/main/docs/development.md):** Environment setup, Android Studio configuration, and debugging workflows.
-- **[Contributing Guidelines](https://github.com/Tushardevx01/nyx/blob/main/docs/contributing.md):** Code conventions, Git workflows, and security checklists.
-- **[Roadmap](https://github.com/Tushardevx01/nyx/blob/main/docs/roadmap.md):** Completed phases and future roadmap milestones.
+- **[System Architecture](https://github.com/debadritax24/nyx/blob/main/docs/architecture.md):** Complete component topology, state machines, and Mermaid sequence diagrams for enrollment, sync, and recovery.
+- **[Encryption & Key Wrapping](https://github.com/debadritax24/nyx/blob/main/docs/encryption.md):** Specification of cryptographic envelopes, Argon2id parameters, AES-256-GCM tag verification, and recovery derivation.
+- **[Security Architecture & Threat Model](https://github.com/debadritax24/nyx/blob/main/docs/security.md):** Adversarial audit findings, hardware boundary threat analysis, device revocation, and rotation guarantees.
+- **[Database Schema & Sync](https://github.com/debadritax24/nyx/blob/main/docs/database.md):** Table schemas (`profiles`, `vaults`, `authenticator_accounts`, `devices`), RLS policy definitions, and CAS concurrency procedures.
+- **[API Reference](https://github.com/debadritax24/nyx/blob/main/docs/api.md):** Supabase REST/RPC interfaces and TypeScript service contracts.
+- **[Testing Strategy](https://github.com/debadritax24/nyx/blob/main/docs/testing.md):** RFC vector test suites, failure injection test plans, and automated verification matrices.
+- **[Local Development Guide](https://github.com/debadritax24/nyx/blob/main/docs/development.md):** Environment setup, Android Studio configuration, and debugging workflows.
+- **[Contributing Guidelines](https://github.com/debadritax24/nyx/blob/main/docs/contributing.md):** Code conventions, Git workflows, and security checklists.
+- **[Roadmap](https://github.com/debadritax24/nyx/blob/main/docs/roadmap.md):** Completed phases and future roadmap milestones.
 
 ---
 
@@ -127,7 +127,7 @@ Deep architectural manuals and specifications are organized inside [`docs/`](htt
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/Tushardevx01/nyx.git
+   git clone https://github.com/debadritax24/nyx.git
    cd nyx
    ```
 
@@ -172,10 +172,10 @@ NYX enforces a strict verification hierarchy covering unit tests, cryptographic 
 
 ## Security Reporting
 
-To report a potential vulnerability or cryptographic defect, please review [docs/security.md](https://github.com/Tushardevx01/nyx/blob/main/docs/security.md) for disclosure guidelines. Never submit sensitive vulnerability details to public issue trackers.
+To report a potential vulnerability or cryptographic defect, please review [docs/security.md](https://github.com/debadritax24/nyx/blob/main/docs/security.md) for disclosure guidelines. Never submit sensitive vulnerability details to public issue trackers.
 
 ---
 
 ## License
 
-This project is licensed under the terms of the [LICENSE](https://github.com/Tushardevx01/nyx/blob/main/LICENSE) file.
+This project is licensed under the terms of the [LICENSE](https://github.com/debadritax24/nyx/blob/main/LICENSE) file.
