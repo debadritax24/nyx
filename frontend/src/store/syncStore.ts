@@ -1,47 +1,83 @@
 import { create } from 'zustand';
-import { SyncMutation, SyncService } from '../services/syncService';
+import { SyncMutation, SyncService, SyncState } from '../services/syncService';
+import { DecryptedAccountRecord } from '../core/crypto';
 
 interface SyncStoreState {
-  isSyncing: boolean;
+  syncState: SyncState;
   lastSyncedAt: string | null;
   pendingMutations: SyncMutation[];
+  conflictsCount: number;
+  syncError: string | null;
+
   queueMutation: (mutation: SyncMutation) => void;
-  syncNow: () => Promise<void>;
+  triggerSync: (
+    userId: string,
+    vaultKey: Uint8Array,
+    localAccounts: DecryptedAccountRecord[],
+    onAccountsUpdated: (merged: DecryptedAccountRecord[]) => Promise<void>
+  ) => Promise<void>;
+  resetSync: () => void;
 }
 
 export const useSyncStore = create<SyncStoreState>((set, get) => ({
-  isSyncing: false,
+  syncState: 'idle',
   lastSyncedAt: null,
   pendingMutations: [],
+  conflictsCount: 0,
+  syncError: null,
 
   queueMutation: (mutation: SyncMutation) => {
     set((state) => ({
       pendingMutations: [...state.pendingMutations, mutation],
+      syncState: 'pending',
     }));
   },
 
-  syncNow: async () => {
-    const { isSyncing, pendingMutations, lastSyncedAt } = get();
-    if (isSyncing) return;
+  resetSync: () => {
+    set({
+      syncState: 'idle',
+      lastSyncedAt: null,
+      pendingMutations: [],
+      conflictsCount: 0,
+      syncError: null,
+    });
+  },
+
+  triggerSync: async (userId, vaultKey, localAccounts, onAccountsUpdated) => {
+    const { syncState, pendingMutations, lastSyncedAt } = get();
+    if (syncState === 'syncing') return;
 
     try {
-      set({ isSyncing: true });
+      set({ syncState: 'syncing', syncError: null });
 
-      // 1. Process pending mutations push
-      for (const mutation of pendingMutations) {
-        await SyncService.pushAccount(mutation);
-      }
+      const result = await SyncService.executeFullSync(
+        userId,
+        vaultKey,
+        localAccounts,
+        pendingMutations,
+        lastSyncedAt || undefined
+      );
 
-      // 2. Pull remote records
-      await SyncService.pullAccounts(lastSyncedAt || undefined);
+      // Save reconciled accounts to local encrypted storage
+      await onAccountsUpdated(result.updatedAccounts);
 
       set({
-        pendingMutations: [],
+        syncState: result.conflictsCount > 0 ? 'conflict' : 'synced',
         lastSyncedAt: new Date().toISOString(),
-        isSyncing: false,
+        pendingMutations: [],
+        conflictsCount: result.conflictsCount,
+        syncError: null,
       });
-    } catch {
-      set({ isSyncing: false });
+    } catch (err: any) {
+      const isNetworkError =
+        err.message?.includes('network') ||
+        err.message?.includes('fetch') ||
+        err.message?.includes('offline');
+
+      set({
+        syncState: isNetworkError ? 'offline' : 'failed',
+        syncError: err.message || 'Synchronization failed',
+      });
     }
   },
 }));

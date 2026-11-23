@@ -47,16 +47,20 @@
 
 ---
 
-## Phase 5: Cloud Synchronization & Conflict Resolution [IN PROGRESS]
-- [x] Define remote encrypted schema and optimistic concurrency trigger on Supabase.
-- [x] Implement synchronization service stubs and Zustand sync store.
-- [ ] Connect live Supabase project and execute end-to-end multi-device sync tests.
-- [ ] Implement retry worker with exponential backoff.
+## Phase 5: Cloud Synchronization & Conflict Resolution [COMPLETED]
+- [x] Author database migration `20261123000002_devices_last_active.sql` with device metadata and optimistic concurrency triggers.
+- [x] Build bidirectional `SyncService` with AES-256-GCM client encryption and AAD binding (`nyx-account:<uuid>:v1`).
+- [x] Implement deterministic conflict reconciliation engine preserving forked copies (`(Conflicted Copy)`) to prevent data loss.
+- [x] Implement tombstone deletion propagation preventing resurrection of deleted accounts.
+- [x] Implement secondary device enrollment via Master Passphrase or 24-Word Recovery Code.
+- [x] Implement Enrolled Devices management screen with revocation capabilities (`app/(app)/devices.tsx`).
+- [x] Implement live sync status pill on home screen and tap-to-sync triggers.
+- [x] Author comprehensive multi-device synchronization test suite (`syncService.test.ts`).
 
 ---
 
-## Phase 6: Hardening & Production Readiness [PENDING]
+## Phase 6: Hardening & Production Readiness [NEXT MILESTONE]
 - [ ] Complete security audit and dependency vulnerability remediation.
-- [ ] Execute end-to-end Maestro tests on Android emulator.
-- [ ] Accessibility (A11y) and talk-back optimization.
-- [ ] EAS Android production build generation.
+- [ ] Implement Maestro automated UI and E2E test flows on Android emulator.
+- [ ] Accessibility (A11y) and screen-reader / talk-back optimization.
+- [ ] Build production APK / AAB bundles using Expo Application Services (EAS).

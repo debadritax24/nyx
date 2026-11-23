@@ -22,12 +22,15 @@ export interface WrappedVaultKeyEnvelope {
 
 export interface DecryptedAccountRecord {
   id: string;
+  vault_id?: string;
   issuer: string;
   account_name: string;
   secret: string; // Base32
   algorithm: 'SHA1' | 'SHA256' | 'SHA512';
   digits: number;
   period: number;
+  version: number; // Concurrency version
+  deleted_at?: string | null; // Soft delete tombstone
   created_at: string;
   updated_at: string;
 }

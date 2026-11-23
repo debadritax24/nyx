@@ -57,7 +57,14 @@ assert.ok(
 );
 console.log('[PASS] Optimistic concurrency trigger enforces monotonic version increments');
 
-// 5. Test optimistic concurrency logic directly in JavaScript simulation
+// 5. Verify device metadata enhancements from forward migration
+assert.ok(
+  totalSql.includes('last_active_at') && totalSql.includes('device_label'),
+  'Verification failure: devices must contain last_active_at and device_label'
+);
+console.log('[PASS] devices table includes last_active_at and device_label columns');
+
+// 6. Test optimistic concurrency logic directly in JavaScript simulation
 function simulateOptimisticConcurrency(oldVersion, newVersion) {
   if (oldVersion !== null && newVersion <= oldVersion) {
     throw new Error(`Concurrency conflict: version ${newVersion} <= ${oldVersion}`);

@@ -93,7 +93,21 @@ Every table containing user data (`profiles`, `vaults`, `authenticator_accounts`
 
 ---
 
-## 6. Security Review Checklist
+## 7. Multi-Device Trust Boundaries & Threat Analysis
+
+### 7.1 Secondary Device Enrollment Trust Model
+- **Zero Plaintext Key Escrow:** Enrolling a secondary device never transmits $K_v$ across the network. The secondary device independently derives the wrapping key from user input (Passphrase or 24-word Recovery Code) using Argon2id, downloads the wrapped key from the `vaults` table, and verifies the AES-256-GCM authentication tag.
+- **Untrusted Server Invariant:** Even with full compromise of the Supabase database and network eavesdropping on TLS traffic, an adversary cannot decrypt account secrets or unwrap the Vault Key without breaking Argon2id ($m=64\text{MB}, t=3$) and 256 bits of entropy.
+- **Device Revocation:** Users can view all registered devices and revoke authorization. Revocation purges the device record from the `devices` table, disallowing future sync queries.
+
+### 7.2 Concurrency & Tamper Resistance
+- **Optimistic Concurrency Guards:** The PostgreSQL engine enforces monotonic version increments via database trigger (`check_optimistic_concurrency`). Stale updates and malicious version replay are rejected at the database level.
+- **Tombstone Propagation:** Soft deletions (`deleted_at`) ensure peer devices never resurrect deleted accounts after coming online.
+- **Data Loss Immunity:** In the event of concurrent conflicting edits, NYX deterministically adopts the newer remote record while preserving the local divergent edit as a `(Conflicted Copy)`. Data is never silently discarded.
+
+---
+
+## 8. Security Review Checklist
 
 Before releasing any version or updating cryptographic routines:
 - [ ] Are all account secrets encrypted using AES-256-GCM before database insertion?

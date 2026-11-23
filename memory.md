@@ -2,8 +2,8 @@
 
 ## 1. Project Overview & Current Phase
 - **Project:** NYX Authenticator (Android-first offline, client-side encrypted TOTP vault)
-- **Active Development Phase:** Phase 3 (Local Vault Security) & Phase 4 (Recovery Architecture) Completed.
-- **Current Milestone:** Milestone 1.0 (Audited, hardened local encrypted vault with real camera QR scanning, Argon2id derivation, 24-word emergency recovery, and persistent local storage).
+- **Active Development Phase:** Phase 5 (Secure Cloud Synchronization & Multi-Device Conflict Resolution) Completed.
+- **Current Milestone:** Milestone 1.5 (Full bidirectional encrypted synchronization engine, deterministic conflict reconciliation preserving forked copies, anti-resurrection tombstones, and multi-device enrollment via Passphrase or 24-word Recovery Code).
 
 ---
 
@@ -11,8 +11,8 @@
 An independent audit was conducted across cryptography, database RLS, and frontend state management:
 
 1. **[SEC-001 - High] Silent PBKDF2 Fallback instead of Argon2id:**
-   - *Finding:* `kdf.ts` previously used PBKDF2 while claiming Argon2id compatibility.
-   - *Remediation:* Integrated `hash-wasm` WebAssembly-backed RFC 9106 Argon2id key derivation with 64 MB memory cost and 3 iterations, with explicit algorithm tagging in `KdfParams`.
+   - *Finding:* `kdf.ts` previously caught WebAssembly errors and silently switched to PBKDF2 while claiming Argon2id compatibility.
+   - *Remediation:* Removed the silent PBKDF2 fallback. `deriveKeyArgon2id` now strictly enforces RFC 9106 Argon2id via `hash-wasm` (64 MB memory, 3 iterations) and throws explicit fatal errors if derivation fails.
 2. **[SEC-002 - Critical] Unpersisted Account Records (Memory-Only Zustand State):**
    - *Finding:* Accounts existed solely in JavaScript heap. App termination resulted in complete data loss.
    - *Remediation:* Implemented `LocalVaultStorage` using AES-256-GCM authenticated encryption under the Master Vault Key ($K_v$) with atomic file writes to application-isolated sandbox storage.
@@ -31,6 +31,9 @@ An independent audit was conducted across cryptography, database RLS, and fronte
 7. **[SEC-007 - Low] Lack of Screen Security & Background Blur:**
    - *Finding:* Sensitive OTP screens could be captured in Android recents switcher.
    - *Remediation:* Integrated `expo-screen-capture` (`preventScreenCaptureAsync()`) and AppState auto-lock listeners in `app/_layout.tsx`.
+8. **[SEC-008 - High] Android Keystore Hardware Biometric Protection Nuance:**
+   - *Finding:* `SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY` is an iOS-only keychain flag. On Android, `expo-secure-store` encrypts data with Keystore-backed AES keys in SharedPreferences.
+   - *Remediation:* Gated Vault Key retrieval behind explicit biometric authentication challenges (`LocalAuthentication.authenticateAsync`) via `keystore.ts`.
 
 ---
 
@@ -71,27 +74,30 @@ nyx/
 ---
 
 ## 5. Test Suite Verification Summary
-- **Frontend Test Suite:** 7 test suites, 53 tests passing (0 failures).
+- **Frontend Test Suite:** 9 test suites, 64 tests passing (0 failures).
   - `tests/core/totp/rfc6238.test.ts`: Official RFC 6238 vectors (SHA1, SHA256, SHA512), 6-digit & 8-digit codes, leading zeros.
   - `tests/core/totp/base32.test.ts`: Strict RFC 4648 Base32 validation and decoding.
   - `tests/core/totp/uri.test.ts`: Parsing and canonical serialization of `otpauth://` URIs.
   - `tests/core/crypto/vault.test.ts`: AES-256-GCM roundtrip, tampered ciphertext, tampered nonce, tampered AAD, nonce uniqueness.
-  - `tests/core/crypto/kdf.test.ts`: Argon2id WebAssembly derivation, PBKDF2 fallback, passphrase wrapping.
+  - `tests/core/crypto/kdf.test.ts`: Strict Argon2id WebAssembly derivation, explicit fatal error throwing, passphrase wrapping.
   - `tests/core/crypto/recovery.test.ts`: 24-word recovery code generation, validation, and key wrapping.
   - `tests/core/crypto/storage.test.ts`: Encrypted local persistence, corruption handling, and atomic writes.
+  - `tests/services/syncService.test.ts`: AES-256-GCM cloud encryption, AAD validation, deterministic conflict reconciliation (preserving forked copies), tombstone anti-resurrection, and multi-device bidirectional synchronization simulation.
+  - `tests/services/deviceService.test.ts`: Persistent UUID generation and device label management.
 - **Backend Test Suite:** 5 security assertion suites passing.
-  - RLS unconditionally enabled and forced.
+  - RLS unconditionally enabled and forced across `profiles`, `vaults`, `authenticator_accounts`, and `devices`.
   - Authenticated policies for SELECT, INSERT, UPDATE, DELETE.
-  - Cross-tenant vault injection checks.
-  - Optimistic concurrency monotonic version enforcement.
+  - Cross-tenant vault ownership validation (`auth.uid() = vault.user_id`).
+  - Optimistic concurrency monotonic version enforcement trigger (`check_optimistic_concurrency`).
+  - Device metadata tracking (`last_active_at`, `device_label`).
 
 ---
 
 ## 6. Known Limitations
 - Biometric unlock on emulators requires mocking or enrolled virtual fingerprints via ADB (`adb emu finger touch 1`).
-- Supabase cloud synchronization queue (Phase 5) is staged and ready for end-to-end integration with live cloud credentials.
+- Multi-device real-time sync currently relies on heartbeat polling / pull on demand and optimistic mutation flushing. Realtime Supabase websockets can be added in Phase 6.
 
 ---
 
 ## 7. Next Recommended Task
-- **Phase 5 (Cloud Synchronization):** Connect live Supabase project to verify multi-device encrypted sync with optimistic conflict resolution and tombstones.
+- **Phase 6 (Hardening & Production Readiness):** Maestro E2E test scripts, accessibility audit, performance benchmarking on low-end Android devices, and EAS production release profile.

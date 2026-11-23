@@ -56,7 +56,27 @@ Test cases executed against the local Supabase database:
 
 ---
 
-## 5. Execution Commands
+## 5. Cloud Synchronization & Multi-Device Concurrency Tests
+
+Implemented in `frontend/tests/services/syncService.test.ts` and `frontend/tests/services/deviceService.test.ts`:
+1. **Zero-Knowledge Encryption Verification:** Assert ciphertext uploaded to the cloud contains zero plaintext secrets, issuers, or account labels.
+2. **Associated Authenticated Data (AAD) Tampering:** Tamper with the account UUID in the AAD or ciphertext; verify decryption throws an authentication tag validation error.
+3. **Deterministic Conflict Reconciliation:**
+   - **Clean Fast-Forward:** When remote version > local version and no local conflict exists, cleanly adopt the remote record.
+   - **Data Preservation (Conflicted Copy):** When concurrent edits collide, adopt remote as canonical and fork the local divergent edit into a separate record with `(Conflicted Copy)` appended to the account name. Verify both accounts are preserved.
+   - **Same-Version Divergence:** Detect and fork concurrent edits that share the identical version number.
+4. **Anti-Resurrection Tombstone Protection:** Verify that remote tombstones (`deleted_at`) purge local records and prevent deleted accounts from being resurrected by offline devices.
+5. **Multi-Device Bidirectional Sync Simulation:** Simulate Device A creating an account, Device B pulling and editing to version 2, and Device A pulling and fast-forwarding to version 2.
+6. **Device Metadata Persistence:** Verify persistent device UUID generation and label management.
+
+---
+
+## 6. Execution Commands
+
+### Run Full Test Suite (Frontend + Backend)
+```bash
+npm --prefix frontend test && npm --prefix backend test
+```
 
 ### Run Frontend Unit & Vector Tests
 ```bash
@@ -67,17 +87,16 @@ npm test
 ### Run Vector Tests Exclusively
 ```bash
 cd frontend
-npm test -- src/core/totp/__tests__/rfc6238.test.ts
+npm test -- tests/core/totp/rfc6238.test.ts
 ```
 
-### Run Supabase Database & RLS Tests
+### Run Backend RLS & Concurrency Tests
 ```bash
 cd backend
-supabase test db
+npm test
 ```
 
-### Type Checking & Linting
+### Type Checking
 ```bash
-npm run typecheck
-npm run lint
+npm --prefix frontend run typecheck
 ```

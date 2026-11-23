@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+### Cloud Synchronization & Multi-Device Concurrency (Phase 5)
+- **Bidirectional Cloud Sync Engine:** Implemented `SyncService` with client-side AES-256-GCM encryption, strict AAD verification, and background mutation queuing in `syncStore`.
+- **Deterministic Conflict Reconciliation:** Engineered a deterministic conflict reconciler that fast-forwards clean updates and forks concurrent conflicting edits into `(Conflicted Copy)` records, guaranteeing zero data loss.
+- **Tombstone Anti-Resurrection:** Added soft deletion propagation (`deleted_at`), ensuring deleted records cleanly propagate across offline devices without being resurrected.
+- **Multi-Device Enrollment Protocol:** Created secondary device enrollment workflows in `vaultService.ts` and `app/(app)/enrollment.tsx` allowing secondary devices to independently unwrap $K_v$ via Passphrase or 24-word Recovery Code without key escrow.
+- **Device Management & Auditing:** Added `DeviceService` and `app/(app)/devices.tsx` to list all registered hardware devices, monitor `last_active_at`, and revoke compromised devices.
+- **Forward Database Migration:** Authored `20261123000002_devices_last_active.sql` adding `device_label` and `last_active_at` columns.
+- **Cryptographic Strictness:** Removed silent PBKDF2 fallback in `deriveKeyArgon2id`; key derivation errors now throw explicit fatal exceptions.
+- **Multi-Device Test Coverage:** Added 11 new tests across `syncService.test.ts` and `deviceService.test.ts` bringing total test coverage to 64 passing unit tests and 5 backend security assertion suites.
+
 ### Security & Cryptography
 - **Argon2id Key Derivation:** Implemented RFC 9106 Argon2id derivation via `hash-wasm` with 64 MB memory cost, 3 iterations, and 32-byte key output length.
 - **Local Encrypted Vault Storage:** Created `LocalVaultStorage` providing AES-256-GCM encrypted persistence of account credentials to application sandbox storage.

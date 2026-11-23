@@ -107,3 +107,21 @@ If a device is lost or destroyed:
 5. The client re-derives the respective wrapping key using Argon2id with the downloaded salt and parameters.
 6. The client unwraps and validates the Vault Key ($K_v$) via AES-256-GCM authentication tag verification.
 7. Upon successful unwrapping, $K_v$ is saved into the new device's local Android Keystore, and all encrypted account records are pulled and decrypted locally.
+
+---
+
+## 6. Multi-Device Synchronization & Zero-Escrow Cryptography
+
+### 6.1 Multi-Device Key Distribution Topology
+NYX operates on a zero-knowledge, zero-escrow trust topology across multiple devices:
+1. **No Key Escrow:** The backend never receives, processes, or stores the plaintext Vault Key ($K_v$).
+2. **Deterministic Unwrapping:** When secondary devices (Device B, C...) enroll into an existing account, they retrieve the encrypted vault record from Supabase and independently unwrap $K_v$ using either the user's Master Passphrase or 24-word Recovery Code via Argon2id.
+3. **Local Hardware Re-Binding:** Once unwrapped on the secondary device, $K_v$ is immediately saved into that device's local Android Keystore. Both devices now share the identical 256-bit symmetric key $K_v$ without any network transmission of the key.
+
+### 6.2 Cloud Account Payload AAD Binding
+Every account payload uploaded to the `authenticator_accounts` table is encrypted with AES-256-GCM under $K_v$.
+- **Associated Authenticated Data (AAD):** `nyx-account:<account_uuid>:v1`
+- **Rejection of Ciphertext Relocation:** If an attacker attempts to copy an encrypted account blob into another record or tamper with the record's UUID, GCM authentication tag verification fails immediately on the client during decryption.
+
+### 6.3 Strict KDF Enforcement (Zero Silent Fallback)
+`deriveKeyArgon2id` enforces RFC 9106 Argon2id via WebAssembly (`hash-wasm`). In the event of a runtime error or unsupported platform, it **throws an explicit fatal error**. It **never** silently falls back to weaker algorithms (such as PBKDF2), guaranteeing cryptographic consistency and security across all enrolled devices.

@@ -143,29 +143,74 @@ sequenceDiagram
 
 ---
 
-## 5. Offline-First Cloud Synchronization Flow
+## 5. Offline-First Cloud Synchronization Architecture (Phase 5)
 
-Synchronization is bidirectional, non-blocking, and handles network disruption gracefully.
+Synchronization is bidirectional, non-blocking, and handles intermittent connectivity, network disruptions, and multi-device concurrent edits with zero data loss.
 
+### 5.1 Multi-Device Enrollment Protocol
+When a secondary device (Device B) is enrolled into an existing user account:
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant B as Device B (Secondary)
+    participant Cloud as Supabase Backend
+    participant A as Device A (Primary)
+
+    User->>B: Sign In (Email / Password)
+    B->>Cloud: Fetch Encrypted Vault Record
+    Cloud-->>B: Wrapped Kv + Salt + Params (Passphrase & Recovery)
+    User->>B: Enters Master Passphrase OR 24-Word Recovery Code
+    B->>B: Derive K_pass/K_rec via Argon2id (Strict RFC 9106)
+    B->>B: Unwrap Kv via AES-256-GCM tag verification
+    B->>B: Store Kv in Device B's local Android Keystore
+    B->>Cloud: Register Device B metadata (device_id, label, platform)
+    B->>Cloud: Pull all encrypted accounts (authenticator_accounts)
+    B->>B: Decrypt all accounts with Kv and display live OTPs
+```
+
+### 5.2 Bidirectional Sync Engine & Deterministic Reconciliation
 ```mermaid
 flowchart TD
-    LocalChange["Local Mutation (Create, Update, Delete)"]
-    Queue["Offline Sync Queue"]
-    NetCheck{"Internet Available?"}
-    PushRemote["Push Changes to Supabase (Optimistic Concurrency)"]
-    ConflictCheck{"Remote Version > Local Version?"}
-    Resolve["Conflict Handler (Deterministic Rule / Prompt)"]
-    ApplyRemote["Pull New Remote Records & Decrypt Locally"]
+    subgraph Client ["Client Device (NYX Engine)"]
+        Mut["User Action (Create / Edit / Delete)"]
+        LocalSave["Save Encrypted to Local Vault Storage"]
+        Queue["Queue Mutation (Pending Mutex)"]
+        Enc["AES-256-GCM Encrypt with AAD: nyx-account:id:v1"]
+        StateEngine["Sync State Machine (idle -> syncing -> synced)"]
+    end
 
-    LocalChange --> Queue
-    Queue --> NetCheck
-    NetCheck -- No --> StoredOffline["Retain in Persistent Queue"]
-    NetCheck -- Yes --> PushRemote
-    PushRemote --> ConflictCheck
-    ConflictCheck -- Yes --> Resolve
-    ConflictCheck -- No --> CommitRemote["Supabase Updates Successfully"]
-    CommitRemote --> ApplyRemote
+    subgraph Backend ["Supabase Cloud"]
+        DBTrigger["check_optimistic_concurrency() Trigger"]
+        DBTable["authenticator_accounts Table"]
+    end
+
+    Mut --> LocalSave
+    LocalSave --> Queue
+    Queue --> Enc
+    Enc --> StateEngine
+    StateEngine -->|"1. Push Mutations (nextVersion = version + 1)"| DBTrigger
+
+    DBTrigger -->|"Valid (NEW.version > OLD.version)"| DBTable
+    DBTrigger -->|"Conflict (NEW.version <= OLD.version)"| Reject["Reject with SQL Error 23514"]
+
+    DBTable -->|"2. Pull Remote Modified Records"| Pull["Pull Remote List"]
+    Reject -->|"Mark Conflicted"| Reconcile["Deterministic Reconciler"]
+    Pull --> Reconcile
+
+    subgraph ConflictResolution ["Deterministic Reconciliation Algorithm"]
+        Reconcile --> CheckConf{"Conflict Detected?"}
+        CheckConf -- No --> FastForward["Adopt Remote Version Cleanly"]
+        CheckConf -- Yes --> Fork["Fork Local Edit into (Conflicted Copy)"]
+        Fork --> Preserve["Save Both: Canonical Remote + Preserved Fork"]
+    end
 ```
+
+### 5.3 Tombstone Deletion & Anti-Resurrection
+To prevent offline peers from resurrecting accounts deleted on another device:
+1. Deletions are published as tombstones (`deleted_at = now()`) with an incremented version number.
+2. The reconciler unconditionally honors tombstones when `remote.version >= local.version`, removing the account from local active sets.
+3. Offline devices reconciling against remote tombstones purge the local copy without re-uploading.
 
 ---
 

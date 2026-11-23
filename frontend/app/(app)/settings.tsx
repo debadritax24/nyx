@@ -12,8 +12,8 @@ import { KeystoreService } from '../../src/core/crypto';
 export default function SettingsScreen() {
   const router = useRouter();
   const { user, signOut } = useAuthStore();
-  const { lock, accounts, resetVault } = useVaultStore();
-  const { syncNow, isSyncing, lastSyncedAt } = useSyncStore();
+  const { lock, accounts, resetVault, vaultKey, setAccountsFromSync } = useVaultStore();
+  const { triggerSync, syncState, lastSyncedAt, conflictsCount } = useSyncStore();
   const [signingOut, setSigningOut] = useState(false);
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
 
@@ -24,6 +24,14 @@ export default function SettingsScreen() {
   const handleToggleBiometrics = async (val: boolean) => {
     await KeystoreService.setBiometricsEnabled(val);
     setBiometricsEnabled(val);
+  };
+
+  const handleSync = async () => {
+    if (!user || !vaultKey) {
+      Alert.alert('Sync Offline', 'Please authenticate with Supabase and unlock your vault to sync.');
+      return;
+    }
+    await triggerSync(user.id, vaultKey, accounts, setAccountsFromSync);
   };
 
   const handleLockVault = () => {
@@ -86,19 +94,40 @@ export default function SettingsScreen() {
 
           <View style={styles.divider} />
 
+          <Text style={styles.label}>Sync Status</Text>
+          <Text style={[styles.value, syncState === 'synced' && styles.syncedText]}>
+            {syncState.toUpperCase()} {conflictsCount > 0 ? `(${conflictsCount} conflicts resolved)` : ''}
+          </Text>
+
           <Text style={styles.label}>Last Cloud Synchronization</Text>
           <Text style={styles.value}>
             {lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : 'Never / Pending'}
           </Text>
 
           <Button
-            title={isSyncing ? 'Synchronizing...' : 'Sync Now'}
+            title={syncState === 'syncing' ? 'Synchronizing...' : 'Sync Now'}
             variant="outline"
-            loading={isSyncing}
-            onPress={syncNow}
+            loading={syncState === 'syncing'}
+            onPress={handleSync}
             style={styles.syncBtn}
           />
         </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Multi-Device Synchronization</Text>
+        <Button
+          title="Manage Enrolled Devices"
+          variant="secondary"
+          onPress={() => router.push('/(app)/devices')}
+          style={styles.actionBtn}
+        />
+        <Button
+          title="Enroll Another Device / Restore"
+          variant="outline"
+          onPress={() => router.push('/(app)/enrollment')}
+          style={styles.actionBtn}
+        />
       </View>
 
       <View style={styles.section}>
@@ -193,6 +222,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     marginTop: 2,
+    marginBottom: Spacing.xs,
+  },
+  syncedText: {
+    color: Colors.primary,
   },
   divider: {
     height: 1,

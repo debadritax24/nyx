@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useVaultStore } from '../../src/store/vaultStore';
 import { useAuthStore } from '../../src/store/authStore';
+import { useSyncStore } from '../../src/store/syncStore';
 import { TotpCard } from '../../src/components/TotpCard';
 import { Input } from '../../src/components/Input';
 import { Button } from '../../src/components/Button';
@@ -14,13 +15,16 @@ export default function DashboardScreen() {
   const {
     isUnlocked,
     accounts,
+    vaultKey,
     searchQuery,
     setSearchQuery,
     loadFromLocalKeystore,
     createVault,
     deleteAccount,
+    setAccountsFromSync,
   } = useVaultStore();
   const { user } = useAuthStore();
+  const { syncState, triggerSync } = useSyncStore();
 
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [showSetupModal, setShowSetupModal] = useState(false);
@@ -186,7 +190,22 @@ export default function DashboardScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.logo}>NYX</Text>
-          <Text style={styles.userBadge}>{user?.email || 'Offline Encrypted Vault'}</Text>
+          <View style={styles.userRow}>
+            <Text style={styles.userBadge}>{user?.email || 'Offline Encrypted Vault'}</Text>
+            {user && (
+              <TouchableOpacity
+                onPress={() => vaultKey && triggerSync(user.id, vaultKey, accounts, setAccountsFromSync)}
+                style={[
+                  styles.syncPill,
+                  syncState === 'synced' && styles.syncPillSynced,
+                  syncState === 'conflict' && styles.syncPillConflict,
+                  syncState === 'syncing' && styles.syncPillSyncing,
+                ]}
+              >
+                <Text style={styles.syncPillText}>{syncState.toUpperCase()}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
         <TouchableOpacity
           onPress={() => router.push('/(app)/settings')}
@@ -356,7 +375,33 @@ const styles = StyleSheet.create({
   userBadge: {
     fontSize: 12,
     color: Colors.textDim,
+  },
+  userRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
     marginTop: 2,
+  },
+  syncPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.cardBorder,
+  },
+  syncPillSynced: {
+    backgroundColor: Colors.primaryMuted,
+  },
+  syncPillConflict: {
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+  },
+  syncPillSyncing: {
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+  },
+  syncPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: Colors.primary,
+    letterSpacing: 0.5,
   },
   settingsButton: {
     width: 40,

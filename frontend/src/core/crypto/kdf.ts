@@ -17,7 +17,7 @@ export const DEFAULT_PBKDF2_PARAMS: KdfParams = {
 
 /**
  * Derives a 256-bit symmetric key using Argon2id (RFC 9106) via WebAssembly.
- * Falls back to PBKDF2 only if WebAssembly is strictly unavailable in the runtime environment.
+ * Strict: Never silently falls back to another algorithm.
  */
 export async function deriveKeyArgon2id(
   passphrase: string,
@@ -37,13 +37,9 @@ export async function deriveKeyArgon2id(
     });
     return new Uint8Array(derived);
   } catch (err: any) {
-    // If WebAssembly is unsupported in environment, fall back to PBKDF2 with explicit warning
-    console.warn(`Argon2id derivation failed (${err.message}). Falling back to PBKDF2-SHA256.`);
-    return deriveKeyPbkdf2(passphrase, saltBytes, {
-      algorithm: 'pbkdf2',
-      iterations: 100000,
-      keyLength: params.keyLength || 32,
-    });
+    throw new Error(
+      `Argon2id key derivation failed: ${err.message}. Cryptographic algorithm fallback is strictly prohibited.`
+    );
   }
 }
 
@@ -98,7 +94,8 @@ export async function deriveKeyPbkdf2(
 }
 
 /**
- * Main key derivation entry point. Dispatches based on requested algorithm.
+ * Main key derivation entry point. Dispatches strictly based on requested algorithm.
+ * Never silently changes or downgrades the algorithm.
  */
 export async function deriveKeyFromSecret(
   passphrase: string,
@@ -108,7 +105,10 @@ export async function deriveKeyFromSecret(
   if (params.algorithm === 'argon2id') {
     return deriveKeyArgon2id(passphrase, saltBytes, params);
   }
-  return deriveKeyPbkdf2(passphrase, saltBytes, params);
+  if (params.algorithm === 'pbkdf2') {
+    return deriveKeyPbkdf2(passphrase, saltBytes, params);
+  }
+  throw new Error(`Unsupported or prohibited key derivation algorithm: ${params.algorithm}`);
 }
 
 /**

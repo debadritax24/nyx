@@ -12,30 +12,35 @@ import {
   WrappedVaultKeyEnvelope,
   zeroMemory,
 } from '../core/crypto';
+import { SyncService } from '../services/syncService';
+import { useSyncStore } from './syncStore';
 
 interface VaultStoreState {
   isUnlocked: boolean;
   vaultKey: Uint8Array | null;
+  vaultId: string | null;
   accounts: DecryptedAccountRecord[];
   searchQuery: string;
   autoLockMinutes: number;
   lastActiveTimestamp: number;
 
+  setVaultId: (id: string | null) => void;
   createVault: (passphrase: string) => Promise<{
     recoveryCode: string;
     passphraseEnvelope: WrappedVaultKeyEnvelope;
     recoveryEnvelope: WrappedVaultKeyEnvelope;
   }>;
-  unlockWithKey: (key: Uint8Array) => Promise<void>;
-  unlockWithPassphrase: (passphrase: string, envelope: WrappedVaultKeyEnvelope) => Promise<void>;
-  unlockWithRecoveryCode: (recoveryCode: string, envelope: WrappedVaultKeyEnvelope) => Promise<void>;
+  unlockWithKey: (key: Uint8Array, vaultId?: string) => Promise<void>;
+  unlockWithPassphrase: (passphrase: string, envelope: WrappedVaultKeyEnvelope, vaultId?: string) => Promise<void>;
+  unlockWithRecoveryCode: (recoveryCode: string, envelope: WrappedVaultKeyEnvelope, vaultId?: string) => Promise<void>;
   loadFromLocalKeystore: (promptBiometrics?: boolean) => Promise<boolean>;
   lock: () => void;
   resetVault: () => Promise<void>;
 
   setSearchQuery: (query: string) => void;
+  setAccountsFromSync: (merged: DecryptedAccountRecord[]) => Promise<void>;
   addAccount: (
-    account: Omit<DecryptedAccountRecord, 'id' | 'created_at' | 'updated_at'>
+    account: Omit<DecryptedAccountRecord, 'id' | 'created_at' | 'updated_at' | 'version'>
   ) => Promise<DecryptedAccountRecord>;
   deleteAccount: (id: string) => Promise<void>;
   updateAccount: (id: string, updates: Partial<DecryptedAccountRecord>) => Promise<void>;
@@ -45,13 +50,14 @@ interface VaultStoreState {
 export const useVaultStore = create<VaultStoreState>((set, get) => ({
   isUnlocked: false,
   vaultKey: null,
+  vaultId: null,
   accounts: [],
   searchQuery: '',
   autoLockMinutes: 2,
   lastActiveTimestamp: Date.now(),
 
+  setVaultId: (id) => set({ vaultId: id }),
   setSearchQuery: (query: string) => set({ searchQuery: query }),
-
   recordActivity: () => set({ lastActiveTimestamp: Date.now() }),
 
   createVault: async (passphrase: string) => {
@@ -84,25 +90,26 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     };
   },
 
-  unlockWithKey: async (key: Uint8Array) => {
+  unlockWithKey: async (key: Uint8Array, vaultId?: string) => {
     const loadedAccounts = await LocalVaultStorage.loadAccounts(key);
     await KeystoreService.saveVaultKey(key);
     set({
       isUnlocked: true,
       vaultKey: key,
+      vaultId: vaultId || get().vaultId,
       accounts: loadedAccounts,
       lastActiveTimestamp: Date.now(),
     });
   },
 
-  unlockWithPassphrase: async (passphrase: string, envelope: WrappedVaultKeyEnvelope) => {
+  unlockWithPassphrase: async (passphrase: string, envelope: WrappedVaultKeyEnvelope, vaultId?: string) => {
     const key = await unwrapVaultKey(envelope, passphrase);
-    await get().unlockWithKey(key);
+    await get().unlockWithKey(key, vaultId);
   },
 
-  unlockWithRecoveryCode: async (recoveryCode: string, envelope: WrappedVaultKeyEnvelope) => {
+  unlockWithRecoveryCode: async (recoveryCode: string, envelope: WrappedVaultKeyEnvelope, vaultId?: string) => {
     const key = await unwrapVaultKeyWithRecoveryCode(envelope, recoveryCode);
-    await get().unlockWithKey(key);
+    await get().unlockWithKey(key, vaultId);
   },
 
   loadFromLocalKeystore: async (promptBiometrics = true) => {
@@ -140,10 +147,19 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
     get().lock();
     await KeystoreService.deleteVaultKey();
     await LocalVaultStorage.clearLocalData();
+    useSyncStore.getState().resetSync();
+  },
+
+  setAccountsFromSync: async (mergedAccounts: DecryptedAccountRecord[]) => {
+    const { vaultKey } = get();
+    if (vaultKey) {
+      await LocalVaultStorage.saveAccounts(vaultKey, mergedAccounts);
+    }
+    set({ accounts: mergedAccounts, lastActiveTimestamp: Date.now() });
   },
 
   addAccount: async (data) => {
-    const { accounts, vaultKey } = get();
+    const { accounts, vaultKey, vaultId } = get();
     if (!vaultKey) {
       throw new Error('Vault is locked. Cannot add account.');
     }
@@ -160,38 +176,111 @@ export const useVaultStore = create<VaultStoreState>((set, get) => ({
 
     const newRecord: DecryptedAccountRecord = {
       ...data,
-      id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `acc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: globalThis.crypto?.randomUUID
+        ? globalThis.crypto.randomUUID()
+        : `acc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      vault_id: vaultId || undefined,
+      version: 1,
+      deleted_at: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
     const updatedAccounts = [newRecord, ...accounts];
-    // Persist to encrypted local file storage immediately
     await LocalVaultStorage.saveAccounts(vaultKey, updatedAccounts);
-
     set({ accounts: updatedAccounts, lastActiveTimestamp: Date.now() });
+
+    // Queue sync mutation if vaultId exists
+    if (vaultId) {
+      const encrypted = await SyncService.encryptAccountForSync(vaultKey, newRecord);
+      useSyncStore.getState().queueMutation({
+        id: newRecord.id,
+        vault_id: vaultId,
+        action: 'UPSERT',
+        expectedVersion: 0,
+        nextVersion: 1,
+        ciphertext: encrypted.ciphertext,
+        nonce: encrypted.nonce,
+        crypto_version: encrypted.crypto_version,
+        deleted_at: null,
+        timestamp: Date.now(),
+        retryCount: 0,
+      });
+    }
+
     return newRecord;
   },
 
   deleteAccount: async (id: string) => {
-    const { accounts, vaultKey } = get();
-    if (!vaultKey) {
-      throw new Error('Vault is locked.');
-    }
+    const { accounts, vaultKey, vaultId } = get();
+    if (!vaultKey) throw new Error('Vault is locked.');
+
+    const target = accounts.find((a) => a.id === id);
     const updatedAccounts = accounts.filter((acc) => acc.id !== id);
     await LocalVaultStorage.saveAccounts(vaultKey, updatedAccounts);
     set({ accounts: updatedAccounts, lastActiveTimestamp: Date.now() });
+
+    if (vaultId && target) {
+      const tombstoneRecord: DecryptedAccountRecord = {
+        ...target,
+        deleted_at: new Date().toISOString(),
+        version: target.version + 1,
+        updated_at: new Date().toISOString(),
+      };
+      const encrypted = await SyncService.encryptAccountForSync(vaultKey, tombstoneRecord);
+      useSyncStore.getState().queueMutation({
+        id: target.id,
+        vault_id: vaultId,
+        action: 'DELETE',
+        expectedVersion: target.version,
+        nextVersion: target.version + 1,
+        ciphertext: encrypted.ciphertext,
+        nonce: encrypted.nonce,
+        crypto_version: encrypted.crypto_version,
+        deleted_at: tombstoneRecord.deleted_at ?? null,
+        timestamp: Date.now(),
+        retryCount: 0,
+      });
+    }
   },
 
   updateAccount: async (id: string, updates: Partial<DecryptedAccountRecord>) => {
-    const { accounts, vaultKey } = get();
-    if (!vaultKey) {
-      throw new Error('Vault is locked.');
-    }
-    const updatedAccounts = accounts.map((acc) =>
-      acc.id === id ? { ...acc, ...updates, updated_at: new Date().toISOString() } : acc
-    );
+    const { accounts, vaultKey, vaultId } = get();
+    if (!vaultKey) throw new Error('Vault is locked.');
+
+    let modifiedRecord: DecryptedAccountRecord | null = null;
+    const updatedAccounts = accounts.map((acc) => {
+      if (acc.id === id) {
+        modifiedRecord = {
+          ...acc,
+          ...updates,
+          version: acc.version + 1,
+          updated_at: new Date().toISOString(),
+        };
+        return modifiedRecord;
+      }
+      return acc;
+    });
+
     await LocalVaultStorage.saveAccounts(vaultKey, updatedAccounts);
     set({ accounts: updatedAccounts, lastActiveTimestamp: Date.now() });
+
+    if (vaultId && modifiedRecord) {
+      const rec = modifiedRecord as DecryptedAccountRecord;
+      const encrypted = await SyncService.encryptAccountForSync(vaultKey, rec);
+      useSyncStore.getState().queueMutation({
+        id: rec.id,
+        vault_id: vaultId,
+        action: 'UPSERT',
+        expectedVersion: rec.version - 1,
+        nextVersion: rec.version,
+        ciphertext: encrypted.ciphertext,
+        nonce: encrypted.nonce,
+        crypto_version: encrypted.crypto_version,
+        deleted_at: null,
+        timestamp: Date.now(),
+        retryCount: 0,
+      });
+    }
   },
 }));

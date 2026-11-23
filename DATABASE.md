@@ -106,8 +106,10 @@ Tracks registered client devices for auditing and push synchronization triggers.
 - `id` (UUID, Primary Key, DEFAULT `gen_random_uuid()`)
 - `user_id` (UUID, NOT NULL, Foreign Key -> `auth.users.id` ON DELETE CASCADE)
 - `device_name` (TEXT, NOT NULL)
+- `device_label` (TEXT) - Optional user-defined friendly name (e.g. 'Pixel 8 Pro (Primary)')
 - `platform` (TEXT, NOT NULL, e.g., 'android')
-- `last_synced_at` (TIMESTAMPTZ)
+- `last_synced_at` (TIMESTAMPTZ) - Timestamp of last successful synchronization
+- `last_active_at` (TIMESTAMPTZ) - Heartbeat timestamp updated when device connects
 - `created_at` (TIMESTAMPTZ, NOT NULL, DEFAULT `now()`)
 - `updated_at` (TIMESTAMPTZ, NOT NULL, DEFAULT `now()`)
 
@@ -156,5 +158,7 @@ CREATE INDEX idx_devices_user_id ON devices(user_id);
 
 ## 5. Synchronization & Concurrency Constraints
 
-1. **Optimistic Versioning:** Every update to an account record increments the `version` column. Clients must send the expected previous version to prevent overwriting concurrent updates.
+1. **Optimistic Versioning:** Every update to an account record increments the `version` column. The PostgreSQL trigger `check_optimistic_concurrency()` executes `BEFORE UPDATE` on `authenticator_accounts`, enforcing `NEW.version > OLD.version`. Any stale update or concurrent push attempting to overwrite or reuse an existing version throws a SQL error (`23514`), triggering client-side conflict reconciliation.
 2. **Tombstone Records:** When an account is deleted locally, `deleted_at` is set rather than physically deleting the database row immediately. This ensures that peer offline devices recognize the deletion and do not recreate the deleted account during reconciliation.
+3. **Vault Integrity:** Migration `20261123000001_harden_rls_policies.sql` guarantees that accounts can only be associated with vaults owned by the authenticated `auth.uid()`, eliminating cross-tenant injection risks.
+4. **Device Metadata Tracking:** Migration `20261123000002_devices_last_active.sql` adds `last_active_at` and `device_label` to the `devices` table, allowing clients to monitor active sessions and identify enrolled hardware.
