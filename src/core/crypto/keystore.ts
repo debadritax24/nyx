@@ -12,7 +12,14 @@ const SECURE_STORE_BIOMETRIC_PREF = 'nyx_biometrics_enabled_v1';
 export class KeystoreService {
   private static async getSecureStore() {
     try {
-      return require('expo-secure-store');
+      const SecureStore = require('expo-secure-store');
+      if (SecureStore && typeof SecureStore.isAvailableAsync === 'function') {
+        const isAvailable = await SecureStore.isAvailableAsync().catch(() => false);
+        if (!isAvailable) {
+          return null;
+        }
+      }
+      return SecureStore;
     } catch {
       return null;
     }
@@ -46,11 +53,15 @@ export class KeystoreService {
    * Checks whether biometric hardware is present and enrolled.
    */
   static async canUseBiometrics(): Promise<boolean> {
-    const LocalAuth = await this.getLocalAuth();
-    if (!LocalAuth) return false;
-    const hasHardware = await LocalAuth.hasHardwareAsync();
-    const isEnrolled = await LocalAuth.isEnrolledAsync();
-    return hasHardware && isEnrolled;
+    try {
+      const LocalAuth = await this.getLocalAuth();
+      if (!LocalAuth || typeof LocalAuth.hasHardwareAsync !== 'function') return false;
+      const hasHardware = await LocalAuth.hasHardwareAsync().catch(() => false);
+      const isEnrolled = await LocalAuth.isEnrolledAsync().catch(() => false);
+      return Boolean(hasHardware && isEnrolled);
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -206,18 +217,25 @@ export class KeystoreService {
   }
 
   static async setBiometricsEnabled(enabled: boolean): Promise<void> {
+    (globalThis as any).__nyx_biometrics_enabled = enabled ? 'true' : 'false';
     const SecureStore = await this.getSecureStore();
-    if (SecureStore) {
-      await SecureStore.setItemAsync(SECURE_STORE_BIOMETRIC_PREF, enabled ? 'true' : 'false');
+    if (SecureStore && typeof SecureStore.setItemAsync === 'function') {
+      try {
+        await SecureStore.setItemAsync(SECURE_STORE_BIOMETRIC_PREF, enabled ? 'true' : 'false');
+      } catch {}
     }
   }
 
   static async isBiometricsEnabled(): Promise<boolean> {
     const SecureStore = await this.getSecureStore();
-    if (SecureStore) {
-      const val = await SecureStore.getItemAsync(SECURE_STORE_BIOMETRIC_PREF);
-      return val === 'true';
+    if (SecureStore && typeof SecureStore.getItemAsync === 'function') {
+      try {
+        const val = await SecureStore.getItemAsync(SECURE_STORE_BIOMETRIC_PREF);
+        if (val !== null && val !== undefined) {
+          return val === 'true';
+        }
+      } catch {}
     }
-    return false;
+    return (globalThis as any).__nyx_biometrics_enabled === 'true';
   }
 }

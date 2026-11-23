@@ -22,7 +22,14 @@ export class DeviceService {
 
   private static async getSecureStore() {
     try {
-      return require('expo-secure-store');
+      const ss = require('expo-secure-store');
+      if (ss && typeof ss.isAvailableAsync === 'function') {
+        const isAvailable = await ss.isAvailableAsync().catch(() => false);
+        if (!isAvailable) {
+          return null;
+        }
+      }
+      return ss;
     } catch {
       return null;
     }

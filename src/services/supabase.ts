@@ -9,6 +9,12 @@ const ExpoSecureStoreAdapter = {
   getItem: async (key: string): Promise<string | null> => {
     try {
       const SecureStore = require('expo-secure-store');
+      if (SecureStore && typeof SecureStore.isAvailableAsync === 'function') {
+        const isAvailable = await SecureStore.isAvailableAsync().catch(() => false);
+        if (!isAvailable) {
+          return (globalThis as any)[`__supa_store_${key}`] || null;
+        }
+      }
       return await SecureStore.getItemAsync(key);
     } catch {
       return (globalThis as any)[`__supa_store_${key}`] || null;
@@ -17,6 +23,13 @@ const ExpoSecureStoreAdapter = {
   setItem: async (key: string, value: string): Promise<void> => {
     try {
       const SecureStore = require('expo-secure-store');
+      if (SecureStore && typeof SecureStore.isAvailableAsync === 'function') {
+        const isAvailable = await SecureStore.isAvailableAsync().catch(() => false);
+        if (!isAvailable) {
+          (globalThis as any)[`__supa_store_${key}`] = value;
+          return;
+        }
+      }
       await SecureStore.setItemAsync(key, value);
     } catch {
       (globalThis as any)[`__supa_store_${key}`] = value;
@@ -25,6 +38,13 @@ const ExpoSecureStoreAdapter = {
   removeItem: async (key: string): Promise<void> => {
     try {
       const SecureStore = require('expo-secure-store');
+      if (SecureStore && typeof SecureStore.isAvailableAsync === 'function') {
+        const isAvailable = await SecureStore.isAvailableAsync().catch(() => false);
+        if (!isAvailable) {
+          delete (globalThis as any)[`__supa_store_${key}`];
+          return;
+        }
+      }
       await SecureStore.deleteItemAsync(key);
     } catch {
       delete (globalThis as any)[`__supa_store_${key}`];
