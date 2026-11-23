@@ -45,4 +45,24 @@ describe('TOTP URI Parser', () => {
     expect(built).toContain('secret=JBSWY3DPEHPK3PXP');
     expect(built).toContain('algorithm=SHA256');
   });
+
+  it('parses typical OpenAI / ChatGPT QR code URIs with default parameters', () => {
+    const uri = 'otpauth://totp/OpenAI:alex%40openai.com?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&issuer=OpenAI';
+    const parsed = parseTotpUri(uri);
+
+    expect(parsed.issuer).toBe('OpenAI');
+    expect(parsed.account).toBe('alex@openai.com');
+    expect(parsed.secret).toBe('HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ');
+    expect(parsed.algorithm).toBe('SHA1');
+    expect(parsed.digits).toBe(6);
+    expect(parsed.period).toBe(30);
+  });
+
+  it('normalizes algorithm variations such as SHA-1 and sha256', () => {
+    const uri1 = 'otpauth://totp/Test:user?secret=JBSWY3DPEHPK3PXP&algorithm=SHA-1';
+    expect(parseTotpUri(uri1).algorithm).toBe('SHA1');
+
+    const uri2 = 'otpauth://totp/Test:user?secret=JBSWY3DPEHPK3PXP&algorithm=sha256';
+    expect(parseTotpUri(uri2).algorithm).toBe('SHA256');
+  });
 });

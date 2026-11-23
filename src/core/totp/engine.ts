@@ -14,7 +14,8 @@ async function computeHmac(
   keyBytes: Uint8Array,
   messageBytes: Uint8Array
 ): Promise<Uint8Array> {
-  const algoName = algorithm === 'SHA1' ? 'SHA-1' : algorithm === 'SHA256' ? 'SHA-256' : 'SHA-512';
+  const normalizedAlgo = (algorithm || 'SHA1').toUpperCase().replace('-', '') as 'SHA1' | 'SHA256' | 'SHA512';
+  const algoName = normalizedAlgo === 'SHA1' ? 'SHA-1' : normalizedAlgo === 'SHA256' ? 'SHA-256' : 'SHA-512';
 
   // 1. Check if global crypto.subtle is available (Browsers, Expo WebCrypto, modern React Native)
   if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle) {
@@ -39,7 +40,7 @@ async function computeHmac(
   try {
     const nodeCrypto = require('crypto');
     if (nodeCrypto && typeof nodeCrypto.createHmac === 'function') {
-      const nodeAlgo = algorithm.toLowerCase();
+      const nodeAlgo = normalizedAlgo.toLowerCase();
       const nodeHmac = nodeCrypto.createHmac(nodeAlgo, Buffer.from(keyBytes));
       nodeHmac.update(Buffer.from(messageBytes));
       return new Uint8Array(nodeHmac.digest());
@@ -47,11 +48,11 @@ async function computeHmac(
   } catch {}
 
   // 3. Pure JavaScript RFC HMAC via @noble/hashes (Hermes / React Native mobile)
-  if (algorithm === 'SHA1') {
+  if (normalizedAlgo === 'SHA1') {
     return hmac(sha1, keyBytes, messageBytes);
-  } else if (algorithm === 'SHA256') {
+  } else if (normalizedAlgo === 'SHA256') {
     return hmac(sha256, keyBytes, messageBytes);
-  } else if (algorithm === 'SHA512') {
+  } else if (normalizedAlgo === 'SHA512') {
     return hmac(sha512, keyBytes, messageBytes);
   }
 
@@ -70,10 +71,13 @@ export async function generateTotp(options: TotpOptions): Promise<TotpResult> {
     timestamp = Date.now(),
   } = options;
 
+  const numDigits = Number(digits) || 6;
+  const numPeriod = Number(period) || 30;
+
   const keyBytes = decodeBase32(secret);
   const epochSeconds = Math.floor(timestamp / 1000);
-  const timeStep = Math.floor(epochSeconds / period);
-  const remainingSeconds = period - (epochSeconds % period);
+  const timeStep = Math.floor(epochSeconds / numPeriod);
+  const remainingSeconds = numPeriod - (epochSeconds % numPeriod);
 
   // Convert time step to 8-byte big-endian buffer (RFC 4226)
   const counterBytes = new Uint8Array(8);
@@ -93,13 +97,13 @@ export async function generateTotp(options: TotpOptions): Promise<TotpResult> {
     ((hmac[offset + 2] & 0xff) << 8) |
     (hmac[offset + 3] & 0xff);
 
-  const otp = binary % Math.pow(10, digits);
-  const code = otp.toString().padStart(digits, '0');
+  const otp = binary % Math.pow(10, numDigits);
+  const code = otp.toString().padStart(numDigits, '0');
 
   return {
     code,
     remainingSeconds,
-    period,
+    period: numPeriod,
   };
 }
 

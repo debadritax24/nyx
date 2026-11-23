@@ -22,15 +22,18 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
       try {
         const res = await generateTotp({
           secret: account.secret,
-          algorithm: account.algorithm,
-          digits: account.digits,
-          period: account.period,
+          algorithm: account.algorithm || 'SHA1',
+          digits: Number(account.digits) || 6,
+          period: Number(account.period) || 30,
         });
         if (isMounted) {
           setCode(res.code);
           setRemaining(res.remainingSeconds);
         }
-      } catch {
+      } catch (err: any) {
+        if (__DEV__) {
+          console.warn(`[TotpCard] OTP calculation error for ${account.issuer || 'Account'}:`, err?.message || err);
+        }
         if (isMounted) setCode('ERROR');
       }
     };
@@ -41,7 +44,7 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
       isMounted = false;
       clearInterval(interval);
     };
-  }, [account]);
+  }, [account.id, account.secret, account.algorithm, account.digits, account.period]);
 
   const formattedCode =
     code.length === 6

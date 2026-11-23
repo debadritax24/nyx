@@ -40,11 +40,12 @@ export function parseTotpUri(uriString: string): ParsedTotpUri {
   const queryIssuer = params.get('issuer')?.trim();
   const issuer = queryIssuer || labelIssuer || 'Unknown';
 
-  const rawAlgo = (params.get('algorithm') || 'SHA1').toUpperCase();
+  const rawAlgo = (params.get('algorithm') || 'SHA1').toUpperCase().replace('-', '');
   let algorithm: HashAlgorithm = 'SHA1';
   if (rawAlgo === 'SHA256') algorithm = 'SHA256';
   else if (rawAlgo === 'SHA512') algorithm = 'SHA512';
-  else if (rawAlgo !== 'SHA1') {
+  else if (rawAlgo === 'SHA1') algorithm = 'SHA1';
+  else {
     throw new Error(`Unsupported algorithm: ${rawAlgo}`);
   }
 
