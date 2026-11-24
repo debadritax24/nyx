@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getRandomBytes, bytesToBase64 } from '../core/crypto/vault';
+import { isExpoNativeModuleAvailable } from '../core/nativeModules';
 
 const DEVICE_ID_KEY = 'nyx_device_id_v1';
 const DEVICE_LABEL_KEY = 'nyx_device_label_v1';
@@ -21,6 +22,9 @@ export class DeviceService {
   private static cachedDeviceLabel: string | null = null;
 
   private static async getSecureStore() {
+    if (!isExpoNativeModuleAvailable('ExpoSecureStore')) {
+      return null;
+    }
     try {
       const ss = require('expo-secure-store');
       if (ss && typeof ss.isAvailableAsync === 'function') {

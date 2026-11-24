@@ -1,4 +1,5 @@
 import { bytesToBase64, base64ToBytes, getRandomBytes } from './vault';
+import { isExpoNativeModuleAvailable } from '../nativeModules';
 
 const SECURE_STORE_VAULT_KEY_ALIAS = 'nyx_master_vault_key_v1';
 const SECURE_STORE_STAGING_KEY_ALIAS = 'nyx_staging_vault_key_v1';
@@ -11,6 +12,9 @@ const SECURE_STORE_BIOMETRIC_PREF = 'nyx_biometrics_enabled_v1';
  */
 export class KeystoreService {
   private static async getSecureStore() {
+    if (!isExpoNativeModuleAvailable('ExpoSecureStore')) {
+      return null;
+    }
     try {
       const SecureStore = require('expo-secure-store');
       if (SecureStore && typeof SecureStore.isAvailableAsync === 'function') {
@@ -26,6 +30,9 @@ export class KeystoreService {
   }
 
   private static async getLocalAuth() {
+    if (!isExpoNativeModuleAvailable('ExpoLocalAuthentication')) {
+      return null;
+    }
     try {
       return require('expo-local-authentication');
     } catch {

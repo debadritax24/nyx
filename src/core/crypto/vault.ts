@@ -1,5 +1,6 @@
 import { sha512 } from '@noble/hashes/sha2.js';
 import { EncryptedPayload } from './types';
+import { isExpoNativeModuleAvailable } from '../nativeModules';
 
 export const CURRENT_CRYPTO_VERSION = 1;
 
@@ -91,24 +92,26 @@ export function getRandomBytes(length: number): Uint8Array {
     } catch {}
   }
 
-  // 2. Check expo-crypto dynamically (if native module is linked in binary)
-  try {
-    const ExpoCrypto = require('expo-crypto');
-    if (ExpoCrypto) {
-      if (typeof ExpoCrypto.getRandomBytes === 'function') {
-        const bytes = ExpoCrypto.getRandomBytes(length);
-        if (bytes && bytes.length === length) {
-          return new Uint8Array(bytes);
+  // 2. Check expo-crypto dynamically (only if native module is linked in binary)
+  if (isExpoNativeModuleAvailable('ExpoCrypto')) {
+    try {
+      const ExpoCrypto = require('expo-crypto');
+      if (ExpoCrypto) {
+        if (typeof ExpoCrypto.getRandomBytes === 'function') {
+          const bytes = ExpoCrypto.getRandomBytes(length);
+          if (bytes && bytes.length === length) {
+            return new Uint8Array(bytes);
+          }
+        }
+        if (typeof ExpoCrypto.getRandomValues === 'function') {
+          const bytes = new Uint8Array(length);
+          ExpoCrypto.getRandomValues(bytes);
+          return bytes;
         }
       }
-      if (typeof ExpoCrypto.getRandomValues === 'function') {
-        const bytes = new Uint8Array(length);
-        ExpoCrypto.getRandomValues(bytes);
-        return bytes;
-      }
+    } catch {
+      // expo-crypto native module not available or threw
     }
-  } catch {
-    // expo-crypto native module not available or threw
   }
 
   // 3. Check Node.js crypto module (Jest / Node runner)

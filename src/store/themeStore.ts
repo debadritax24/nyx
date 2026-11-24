@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Platform, Appearance } from 'react-native';
 import { lightTheme, darkTheme, ThemeColors } from '../components/tokens';
+import { isExpoNativeModuleAvailable } from '../core/nativeModules';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -62,7 +63,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
           document.documentElement.classList.remove('dark');
         }
       } catch {}
-    } else {
+    } else if (isExpoNativeModuleAvailable('ExpoSecureStore')) {
       try {
         const SecureStore = require('expo-secure-store');
         SecureStore.setItemAsync(THEME_STORAGE_KEY, mode).catch(() => {});
@@ -72,7 +73,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
   initTheme: async () => {
     let mode: ThemeMode = getStoredThemeSync();
-    if (Platform.OS !== 'web') {
+    if (Platform.OS !== 'web' && isExpoNativeModuleAvailable('ExpoSecureStore')) {
       try {
         const SecureStore = require('expo-secure-store');
         const stored = await SecureStore.getItemAsync(THEME_STORAGE_KEY);

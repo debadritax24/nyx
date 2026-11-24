@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { isExpoNativeModuleAvailable } from '../core/nativeModules';
 
 // Access only explicitly exposed public Expo variables
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
@@ -7,6 +8,9 @@ const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'placehol
 // Custom storage adapter using Expo SecureStore where available, falling back to in-memory
 const ExpoSecureStoreAdapter = {
   getItem: async (key: string): Promise<string | null> => {
+    if (!isExpoNativeModuleAvailable('ExpoSecureStore')) {
+      return (globalThis as any)[`__supa_store_${key}`] || null;
+    }
     try {
       const SecureStore = require('expo-secure-store');
       if (SecureStore && typeof SecureStore.isAvailableAsync === 'function') {
@@ -21,6 +25,10 @@ const ExpoSecureStoreAdapter = {
     }
   },
   setItem: async (key: string, value: string): Promise<void> => {
+    if (!isExpoNativeModuleAvailable('ExpoSecureStore')) {
+      (globalThis as any)[`__supa_store_${key}`] = value;
+      return;
+    }
     try {
       const SecureStore = require('expo-secure-store');
       if (SecureStore && typeof SecureStore.isAvailableAsync === 'function') {
@@ -36,6 +44,10 @@ const ExpoSecureStoreAdapter = {
     }
   },
   removeItem: async (key: string): Promise<void> => {
+    if (!isExpoNativeModuleAvailable('ExpoSecureStore')) {
+      delete (globalThis as any)[`__supa_store_${key}`];
+      return;
+    }
     try {
       const SecureStore = require('expo-secure-store');
       if (SecureStore && typeof SecureStore.isAvailableAsync === 'function') {
