@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Colors, Radius, Spacing } from './tokens';
+import { useTheme } from '../store/themeStore';
 import { CountdownCircle } from './CountdownCircle';
+import { BrandIcon } from './BrandIcon';
+import { CopyIcon, CheckIcon, MoreIcon } from './Icons';
+import { AccountDetailsModal } from './AccountDetailsModal';
 import { DecryptedAccountRecord } from '../core/crypto';
 import { generateTotpSync } from '../core/totp';
+import { Radius, Spacing, Typography, Shadows } from './tokens';
 
 interface TotpCardProps {
   account: DecryptedAccountRecord;
@@ -12,6 +16,10 @@ interface TotpCardProps {
 }
 
 export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete }) => {
+  const { theme } = useTheme();
+  const [copied, setCopied] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+
   const computeCode = () => {
     try {
       return generateTotpSync({
@@ -30,7 +38,9 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
 
   const initial = computeCode();
   const [code, setCode] = useState(initial ? initial.code : '------');
-  const [remaining, setRemaining] = useState(initial ? initial.remainingSeconds : (Number(account.period) || 30));
+  const [remaining, setRemaining] = useState(
+    initial ? initial.remainingSeconds : Number(account.period) || 30
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -55,6 +65,12 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
     };
   }, [account.id, account.secret, account.algorithm, account.digits, account.period]);
 
+  const handleCopyClick = () => {
+    if (onCopy) onCopy(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const formattedCode =
     code.length === 6
       ? `${code.slice(0, 3)} ${code.slice(3)}`
@@ -62,118 +78,194 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
       ? `${code.slice(0, 4)} ${code.slice(4)}`
       : code;
 
+  const isUrgent = remaining <= 5;
+
   return (
-    <View style={styles.card}>
-      <View style={styles.headerRow}>
-        <View style={styles.infoCol}>
-          <Text style={styles.issuerText} numberOfLines={1}>
-            {account.issuer || 'Account'}
-          </Text>
-          <Text style={styles.accountText} numberOfLines={1}>
-            {account.account_name}
-          </Text>
-        </View>
-        <View style={styles.actionRight}>
-          <CountdownCircle remaining={remaining} total={account.period || 30} />
-          {onDelete && (
+    <>
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: theme.surface,
+            borderColor: theme.border,
+          },
+          Shadows.card,
+        ]}
+      >
+        {/* Top Service Header */}
+        <View style={styles.topRow}>
+          <View style={styles.serviceMeta}>
+            <BrandIcon issuer={account.issuer} size={42} />
+            <View style={styles.textMeta}>
+              <Text style={[styles.issuerText, { color: theme.heading }]} numberOfLines={1}>
+                {account.issuer || 'Account'}
+              </Text>
+              <Text style={[styles.accountText, { color: theme.textMuted }]} numberOfLines={1}>
+                {account.account_name}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.topRightActions}>
+            <CountdownCircle
+              remaining={remaining}
+              total={Number(account.period) || 30}
+              size={36}
+            />
             <TouchableOpacity
-              onPress={() => onDelete(account.id)}
-              style={styles.deleteBtn}
+              onPress={() => setShowDetails(true)}
+              style={[styles.moreBtn, { backgroundColor: theme.backgroundSecondary }]}
               accessibilityRole="button"
-              accessibilityLabel={`Delete ${account.issuer || 'account'} ${account.account_name}`}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityLabel="Account details and settings"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Text style={styles.deleteIcon}>×</Text>
+              <MoreIcon size={18} color={theme.textMuted} />
             </TouchableOpacity>
-          )}
+          </View>
         </View>
+
+        {/* OTP Code Display Box */}
+        <TouchableOpacity
+          activeOpacity={0.75}
+          onPress={handleCopyClick}
+          accessibilityRole="button"
+          accessibilityLabel={`One time password for ${account.issuer || 'account'}: ${formattedCode}. Tap to copy.`}
+          testID="copy-otp-button"
+          style={[
+            styles.codeBox,
+            {
+              backgroundColor: theme.codeBoxBg,
+              borderColor: copied ? theme.success : theme.codeBoxBorder,
+            },
+          ]}
+        >
+          <View style={styles.codeColumn}>
+            <Text
+              style={[
+                styles.codeText,
+                {
+                  color: isUrgent ? theme.danger : theme.primary,
+                  fontFamily: Typography.fontFamilyMono,
+                },
+              ]}
+            >
+              {formattedCode}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.copyBadge,
+              {
+                backgroundColor: copied ? theme.successMuted : theme.surfaceHighlight,
+              },
+            ]}
+          >
+            {copied ? (
+              <>
+                <CheckIcon size={14} color={theme.success} />
+                <Text style={[styles.copyBadgeText, { color: theme.success }]}>COPIED</Text>
+              </>
+            ) : (
+              <>
+                <CopyIcon size={14} color={theme.text} />
+                <Text style={[styles.copyBadgeText, { color: theme.text }]}>COPY</Text>
+              </>
+            )}
+          </View>
+        </TouchableOpacity>
       </View>
 
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={() => onCopy && onCopy(code)}
-        accessibilityRole="button"
-        accessibilityLabel={`One time password for ${account.issuer || 'account'} ${account.account_name}: ${formattedCode}. Tap to copy.`}
-        testID="copy-otp-button"
-        style={styles.codeContainer}
-      >
-        <Text style={[styles.codeText, remaining <= 5 && styles.codeUrgent]}>{formattedCode}</Text>
-        <Text style={styles.copyHint}>Tap to copy</Text>
-      </TouchableOpacity>
-    </View>
+      {/* Account Details & Specifications Modal */}
+      <AccountDetailsModal
+        visible={showDetails}
+        account={account}
+        code={code}
+        remaining={remaining}
+        onClose={() => setShowDetails(false)}
+        onCopy={handleCopyClick}
+        onDelete={onDelete || (() => {})}
+      />
+    </>
   );
 };
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.cardBackground,
     borderRadius: Radius.lg,
     padding: Spacing.md,
     marginBottom: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.cardBorder,
   },
-  headerRow: {
+  topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: Spacing.sm,
   },
-  infoCol: {
+  serviceMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
     marginRight: Spacing.sm,
   },
-  actionRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  deleteBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: Radius.full,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteIcon: {
-    color: Colors.danger,
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 20,
+  textMeta: {
+    marginLeft: Spacing.sm,
+    flex: 1,
   },
   issuerText: {
-    color: Colors.text,
     fontSize: 16,
     fontWeight: '700',
+    fontFamily: Typography.fontFamilyHeading,
   },
   accountText: {
-    color: Colors.textMuted,
     fontSize: 13,
     marginTop: 2,
+    fontFamily: Typography.fontFamilyBody,
   },
-  codeContainer: {
-    backgroundColor: '#0F131C',
+  topRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  moreBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+  codeBox: {
     borderRadius: Radius.md,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: Spacing.xs,
+    borderWidth: 1,
+  },
+  codeColumn: {
+    flex: 1,
   },
   codeText: {
-    color: Colors.primary,
     fontSize: 28,
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
-    letterSpacing: 2,
+    letterSpacing: 2.5,
   },
-  codeUrgent: {
-    color: Colors.danger,
+  copyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Radius.sm,
+    gap: 4,
   },
-  copyHint: {
-    color: Colors.textDim,
-    fontSize: 12,
+  copyBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: Typography.fontFamilyBody,
+    letterSpacing: 0.5,
   },
 });

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Colors } from './tokens';
+import { useTheme } from '../store/themeStore';
+import { Typography } from './tokens';
 
 interface CountdownCircleProps {
   remaining: number;
@@ -10,10 +11,17 @@ interface CountdownCircleProps {
 
 export const CountdownCircle: React.FC<CountdownCircleProps> = ({
   remaining,
-  size = 36,
+  size = 38,
 }) => {
+  const { theme, isDark } = useTheme();
   const isUrgent = remaining <= 5;
-  const color = isUrgent ? Colors.danger : Colors.primary;
+
+  const strokeColor = isUrgent ? theme.danger : isDark ? theme.heading : theme.primary;
+  const bgColor = isUrgent
+    ? theme.dangerMuted
+    : isDark
+    ? 'rgba(254, 215, 184, 0.08)'
+    : 'rgba(89, 23, 27, 0.06)';
 
   return (
     <View
@@ -23,24 +31,35 @@ export const CountdownCircle: React.FC<CountdownCircleProps> = ({
           width: size,
           height: size,
           borderRadius: size / 2,
-          borderColor: color,
+          borderColor: strokeColor,
+          backgroundColor: bgColor,
         },
       ]}
     >
-      <Text style={[styles.text, { color }]}>{remaining}</Text>
+      <Text
+        style={[
+          styles.text,
+          {
+            color: strokeColor,
+            fontFamily: Typography.fontFamilyMono,
+            fontSize: size * 0.36,
+          },
+        ]}
+      >
+        {remaining}
+      </Text>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   circle: {
-    borderWidth: 2.5,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.2)',
   },
   text: {
-    fontSize: 13,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
 });

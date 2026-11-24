@@ -5,6 +5,7 @@
   "private": true,
   "description": "NYX offline-first client-side encrypted TOTP authenticator",
   "scripts": {
+    "dev": "expo start",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",

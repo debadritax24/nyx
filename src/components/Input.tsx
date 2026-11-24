@@ -1,23 +1,107 @@
-import React from 'react';
-import { View, Text, TextInput, StyleSheet, TextInputProps } from 'react-native';
-import { Colors, Radius, Spacing } from './tokens';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TextInputProps,
+  TouchableOpacity,
+} from 'react-native';
+import { useTheme } from '../store/themeStore';
+import { EyeIcon, EyeOffIcon } from './Icons';
+import { Radius, Spacing, Typography } from './tokens';
 
 interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
+  hint?: string;
+  rightElement?: React.ReactNode;
 }
 
-export const Input: React.FC<InputProps> = ({ label, error, style, ...rest }) => {
+export const Input: React.FC<InputProps> = ({
+  label,
+  error,
+  hint,
+  rightElement,
+  secureTextEntry,
+  style,
+  ...rest
+}) => {
+  const { theme } = useTheme();
+  const [isFocused, setIsFocused] = useState(false);
+  const [showPassword, setShowPassword] = useState(!secureTextEntry);
+
+  const isPasswordInput = secureTextEntry !== undefined;
+  const actualSecure = isPasswordInput ? !showPassword : secureTextEntry;
+
   return (
     <View style={styles.container}>
-      {label && <Text style={styles.label}>{label}</Text>}
-      <TextInput
-        placeholderTextColor={Colors.textDim}
-        accessibilityLabel={label || rest.placeholder}
-        style={[styles.input, error ? styles.inputError : null, style]}
-        {...rest}
-      />
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {label && (
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, { color: theme.textMuted }]}>{label}</Text>
+        </View>
+      )}
+
+      <View
+        style={[
+          styles.inputWrapper,
+          {
+            backgroundColor: theme.inputBackground,
+            borderColor: error
+              ? theme.danger
+              : isFocused
+              ? theme.primary
+              : theme.inputBorder,
+          },
+        ]}
+      >
+        <TextInput
+          placeholderTextColor={theme.textDim}
+          accessibilityLabel={label || rest.placeholder}
+          secureTextEntry={actualSecure}
+          onFocus={(e) => {
+            setIsFocused(true);
+            rest.onFocus && rest.onFocus(e);
+          }}
+          onBlur={(e) => {
+            setIsFocused(false);
+            rest.onBlur && rest.onBlur(e);
+          }}
+          style={[
+            styles.input,
+            {
+              color: theme.text,
+              fontFamily: Typography.fontFamilyBody,
+            },
+            style,
+          ]}
+          {...rest}
+        />
+
+        {isPasswordInput && (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setShowPassword(!showPassword)}
+            accessibilityRole="button"
+            accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+            style={styles.eyeBtn}
+          >
+            {showPassword ? (
+              <EyeOffIcon size={18} color={theme.textMuted} />
+            ) : (
+              <EyeIcon size={18} color={theme.textMuted} />
+            )}
+          </TouchableOpacity>
+        )}
+
+        {rightElement && <View style={styles.rightElement}>{rightElement}</View>}
+      </View>
+
+      {error ? (
+        <Text style={[styles.errorText, { color: theme.danger }]}>{error}</Text>
+      ) : hint ? (
+        <Text style={[styles.hintText, { color: theme.textDim }]}>{hint}</Text>
+      ) : null}
     </View>
   );
 };
@@ -26,30 +110,47 @@ const styles = StyleSheet.create({
   container: {
     marginBottom: Spacing.md,
   },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
   label: {
-    color: Colors.textMuted,
     fontSize: 13,
-    fontWeight: '500',
-    marginBottom: Spacing.xs,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontWeight: '600',
+    fontFamily: Typography.fontFamilyBody,
+    letterSpacing: 0.2,
+  },
+  inputWrapper: {
+    height: 48,
+    borderRadius: Radius.md,
+    borderWidth: 1.2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
   },
   input: {
-    height: 48,
-    backgroundColor: Colors.cardBackground,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    color: Colors.text,
-    paddingHorizontal: Spacing.md,
-    fontSize: 16,
+    flex: 1,
+    height: '100%',
+    fontSize: 15,
   },
-  inputError: {
-    borderColor: Colors.danger,
+  eyeBtn: {
+    padding: 6,
+    marginLeft: Spacing.xs,
+  },
+  rightElement: {
+    marginLeft: Spacing.xs,
   },
   errorText: {
-    color: Colors.danger,
     fontSize: 12,
-    marginTop: Spacing.xs,
+    marginTop: 4,
+    fontWeight: '500',
+    fontFamily: Typography.fontFamilyBody,
+  },
+  hintText: {
+    fontSize: 12,
+    marginTop: 4,
+    fontFamily: Typography.fontFamilyBody,
   },
 });

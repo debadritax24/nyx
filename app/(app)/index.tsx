@@ -1,17 +1,42 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Modal } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  Alert,
+  Modal,
+  useWindowDimensions,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useVaultStore } from '../../src/store/vaultStore';
 import { useAuthStore } from '../../src/store/authStore';
 import { useSyncStore } from '../../src/store/syncStore';
+import { useTheme } from '../../src/store/themeStore';
 import { TotpCard } from '../../src/components/TotpCard';
 import { Input } from '../../src/components/Input';
 import { Button } from '../../src/components/Button';
-import { Colors, Radius, Spacing } from '../../src/components/tokens';
+import { ThemeToggle } from '../../src/components/ThemeToggle';
+import {
+  ShieldIcon,
+  LockIcon,
+  SearchIcon,
+  SettingsIcon,
+  RefreshIcon,
+} from '../../src/components/Icons';
+import { Radius, Spacing, Typography, Shadows, Palette } from '../../src/components/tokens';
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 1024;
+  const isTablet = width >= 768 && width < 1024;
+  const numColumns = isDesktop ? 3 : isTablet ? 2 : 1;
+
+  const { theme } = useTheme();
+
   const {
     isUnlocked,
     accounts,
@@ -23,6 +48,7 @@ export default function DashboardScreen() {
     deleteAccount,
     setAccountsFromSync,
   } = useVaultStore();
+
   const { user } = useAuthStore();
   const { syncState, triggerSync } = useSyncStore();
 
@@ -54,9 +80,10 @@ export default function DashboardScreen() {
         } catch {}
       }, 30000);
     } catch {
-      // fallback
+      // Fallback
     }
-    setCopyFeedback('Code copied! Purging from clipboard in 30s');
+
+    setCopyFeedback('Code copied to clipboard (auto-purging in 30s)');
     setTimeout(() => setCopyFeedback(null), 2500);
   };
 
@@ -101,38 +128,78 @@ export default function DashboardScreen() {
       acc.account_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // If vault is locked, present explicit unlock screen
+  // If vault is locked, present an editorial unlock screen
   if (!isUnlocked) {
     return (
-      <SafeAreaView style={styles.lockedContainer}>
-        <Text style={styles.lockIcon}>🔒</Text>
-        <Text style={styles.lockedTitle}>NYX Vault is Locked</Text>
-        <Text style={styles.lockedSubtitle}>
-          Authentication is required to decrypt your TOTP credentials.
-        </Text>
+      <SafeAreaView style={[styles.lockedContainer, { backgroundColor: theme.background }]}>
+        <View style={styles.lockedTopBar}>
+          <View style={styles.brandRow}>
+            <View style={[styles.logoMark, { backgroundColor: Palette.primaryBurgundy }]}>
+              <Text style={styles.logoMarkText}>N</Text>
+            </View>
+            <Text style={[styles.brandTitle, { color: theme.heading }]}>NYX</Text>
+          </View>
+          <ThemeToggle size={38} />
+        </View>
 
-        <Button
-          title="Unlock Vault"
-          onPress={handleUnlock}
-          loading={loading}
-          style={styles.unlockBtn}
-        />
+        <View
+          style={[
+            styles.lockedCard,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+            },
+            Shadows.elevated,
+          ]}
+        >
+          <View style={[styles.lockedIconCircle, { backgroundColor: theme.surfaceHighlight }]}>
+            <LockIcon size={32} color={theme.primary} />
+          </View>
 
-        <Button
-          title="Initialize New Vault"
-          variant="outline"
-          onPress={() => setShowSetupModal(true)}
-          style={styles.initBtn}
-        />
+          <Text style={[styles.lockedTitle, { color: theme.heading }]}>
+            NYX Vault is Locked
+          </Text>
+
+          <Text style={[styles.lockedSubtitle, { color: theme.textMuted }]}>
+            Biometric or passphrase authentication is required to decrypt your local TOTP credentials.
+          </Text>
+
+          <Button
+            title="Unlock Vault"
+            size="lg"
+            onPress={handleUnlock}
+            loading={loading}
+            style={styles.unlockBtn}
+          />
+
+          <Button
+            title="Initialize New Vault"
+            size="lg"
+            variant="secondary"
+            onPress={() => setShowSetupModal(true)}
+            style={styles.initBtn}
+          />
+        </View>
 
         {/* Vault Setup Modal */}
         <Modal visible={showSetupModal} animationType="slide" transparent>
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
+            <View
+              style={[
+                styles.modalContent,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                },
+                Shadows.elevated,
+              ]}
+            >
               {!createdRecoveryCode ? (
                 <>
-                  <Text style={styles.modalTitle}>Create Encrypted Vault</Text>
-                  <Text style={styles.modalSubtitle}>
+                  <Text style={[styles.modalTitle, { color: theme.heading }]}>
+                    Create Encrypted Vault
+                  </Text>
+                  <Text style={[styles.modalSubtitle, { color: theme.textMuted }]}>
                     Choose a strong master passphrase. This wraps your 256-bit Vault Key with Argon2id.
                   </Text>
 
@@ -154,6 +221,7 @@ export default function DashboardScreen() {
 
                   <Button
                     title="Initialize Vault"
+                    size="lg"
                     onPress={handleCreateVault}
                     loading={loading}
                     style={styles.modalBtn}
@@ -167,19 +235,30 @@ export default function DashboardScreen() {
                 </>
               ) : (
                 <>
-                  <Text style={styles.modalTitle}>Emergency Recovery Code</Text>
-                  <Text style={styles.modalSubtitle}>
+                  <Text style={[styles.modalTitle, { color: theme.heading }]}>
+                    Emergency Recovery Code
+                  </Text>
+                  <Text style={[styles.modalSubtitle, { color: theme.textMuted }]}>
                     Save these 24 words in a secure offline location. They provide an independent recovery path to unwrap your vault key.
                   </Text>
 
-                  <View style={styles.recoveryBox}>
-                    <Text style={styles.recoveryText} selectable>
+                  <View
+                    style={[
+                      styles.recoveryBox,
+                      {
+                        backgroundColor: theme.codeBoxBg,
+                        borderColor: theme.codeBoxBorder,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.recoveryText, { color: theme.primary }]} selectable>
                       {createdRecoveryCode}
                     </Text>
                   </View>
 
                   <Button
                     title="I Have Saved My Recovery Code"
+                    size="lg"
                     onPress={() => {
                       setShowSetupModal(false);
                       setCreatedRecoveryCode(null);
@@ -196,106 +275,191 @@ export default function DashboardScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.logo}>NYX</Text>
-          <View style={styles.userRow}>
-            <Text style={styles.userBadge}>{user?.email || 'Offline Encrypted Vault'}</Text>
-            {user && (
-              <TouchableOpacity
-                onPress={() => vaultKey && triggerSync(user.id, vaultKey, accounts, setAccountsFromSync)}
-                testID="sync-status-pill"
-                accessibilityRole="button"
-                accessibilityLabel={`Cloud synchronization status: ${syncState}. Tap to synchronize now.`}
-                style={[
-                  styles.syncPill,
-                  syncState === 'synced' && styles.syncPillSynced,
-                  syncState === 'conflict' && styles.syncPillConflict,
-                  syncState === 'syncing' && styles.syncPillSyncing,
-                ]}
-              >
-                <Text style={styles.syncPillText}>{syncState.toUpperCase()}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-        <TouchableOpacity
-          onPress={() => router.push('/(app)/settings')}
-          style={styles.settingsButton}
-          testID="settings-button"
-          accessibilityRole="button"
-          accessibilityLabel="Settings"
-          activeOpacity={0.8}
-        >
-          <Text style={styles.settingsIcon}>⚙</Text>
-        </TouchableOpacity>
-      </View>
-
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+      {/* Toast Notification */}
       {copyFeedback && (
-        <View style={styles.feedbackToast}>
+        <View style={[styles.feedbackToast, { backgroundColor: theme.primary, borderColor: theme.border }]}>
           <Text style={styles.feedbackText}>{copyFeedback}</Text>
         </View>
       )}
 
-      <View style={styles.searchContainer}>
-        <Input
-          placeholder="Search accounts or issuers..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          accessibilityLabel="Search accounts or issuers"
-          style={styles.searchInput}
-        />
-      </View>
+      {/* Main Container */}
+      <View style={styles.mainContainer}>
+        {/* Navigation Header */}
+        <View style={styles.header}>
+          <View style={styles.brandRow}>
+            <View style={[styles.logoMark, { backgroundColor: Palette.primaryBurgundy }]}>
+              <Text style={styles.logoMarkText}>N</Text>
+            </View>
+            <View>
+              <Text style={[styles.brandTitle, { color: theme.heading }]}>NYX</Text>
+              <View style={styles.userStatusRow}>
+                <Text style={[styles.userBadge, { color: theme.textMuted }]} numberOfLines={1}>
+                  {user?.email || 'Offline Encrypted Vault'}
+                </Text>
+                {user && (
+                  <TouchableOpacity
+                    onPress={() => vaultKey && triggerSync(user.id, vaultKey, accounts, setAccountsFromSync)}
+                    testID="sync-status-pill"
+                    accessibilityRole="button"
+                    accessibilityLabel={`Synchronization status: ${syncState}. Tap to sync.`}
+                    style={[
+                      styles.syncPill,
+                      {
+                        backgroundColor:
+                          syncState === 'synced'
+                            ? theme.successMuted
+                            : syncState === 'syncing'
+                            ? theme.warningMuted
+                            : theme.surfaceHighlight,
+                      },
+                    ]}
+                  >
+                    <RefreshIcon
+                      size={10}
+                      color={syncState === 'synced' ? theme.success : theme.primary}
+                    />
+                    <Text
+                      style={[
+                        styles.syncPillText,
+                        { color: syncState === 'synced' ? theme.success : theme.primary },
+                      ]}
+                    >
+                      {syncState.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
 
-      <FlatList
-        data={filteredAccounts}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TotpCard
-            account={item}
-            onCopy={handleCopy}
-            onDelete={(id) => {
-              Alert.alert('Delete Account', `Delete ${item.issuer}?`, [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete', style: 'destructive', onPress: () => deleteAccount(id) },
-              ]);
-            }}
-          />
-        )}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyTitle}>No Accounts Yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Scan a 2FA QR code or enter your secret key manually to get started.
+          {/* Header Controls */}
+          <View style={styles.headerControls}>
+            <ThemeToggle size={38} />
+
+            <TouchableOpacity
+              onPress={() => router.push('/(app)/settings')}
+              style={[
+                styles.iconButton,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+            >
+              <SettingsIcon size={18} color={theme.text} />
+            </TouchableOpacity>
+
+            {/* Quick Add on Desktop Header */}
+            {isDesktop && (
+              <Button
+                title="Add Account"
+                size="sm"
+                onPress={() => router.push('/(app)/scan')}
+                style={styles.desktopAddBtn}
+              />
+            )}
+          </View>
+        </View>
+
+        {/* Hero Section Banner */}
+        <View style={styles.heroBanner}>
+          <View>
+            <Text style={[styles.pageHeading, { color: theme.heading }]}>
+              Your Authenticator
+            </Text>
+            <Text style={[styles.pageSubtitle, { color: theme.textMuted }]}>
+              Your security codes, all in one place.
             </Text>
           </View>
-        }
-      />
 
-      <View style={styles.fabRow}>
-        <TouchableOpacity
-          activeOpacity={0.8}
-          style={[styles.fab, styles.fabSecondary]}
-          testID="manual-key-fab"
-          accessibilityRole="button"
-          accessibilityLabel="Add account with manual key"
-          onPress={() => router.push('/(app)/add-manual')}
-        >
-          <Text style={styles.fabSecondaryText}>Manual Key</Text>
-        </TouchableOpacity>
+          {/* Desktop Search & Quick Buttons */}
+          <View style={styles.searchAndActionsRow}>
+            <View style={styles.searchWrapper}>
+              <Input
+                placeholder="Search accounts or issuers..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                accessibilityLabel="Search accounts or issuers"
+                style={styles.searchInput}
+                rightElement={<SearchIcon size={18} color={theme.textDim} />}
+              />
+            </View>
 
-        <TouchableOpacity
-          activeOpacity={0.8}
-          style={[styles.fab, styles.fabPrimary]}
-          testID="add-account-fab"
-          accessibilityRole="button"
-          accessibilityLabel="Scan QR code"
-          onPress={() => router.push('/(app)/scan')}
-        >
-          <Text style={styles.fabPrimaryText}>+ Scan QR</Text>
-        </TouchableOpacity>
+            {!isDesktop && (
+              <View style={styles.quickAddRow}>
+                <Button
+                  title="+ Scan QR"
+                  size="sm"
+                  onPress={() => router.push('/(app)/scan')}
+                  style={styles.quickBtn}
+                />
+                <Button
+                  title="Manual"
+                  size="sm"
+                  variant="secondary"
+                  onPress={() => router.push('/(app)/add-manual')}
+                  style={styles.quickBtn}
+                />
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Authenticator Cards Grid */}
+        <FlatList
+          key={`grid-${numColumns}`}
+          data={filteredAccounts}
+          numColumns={numColumns}
+          keyExtractor={(item) => item.id}
+          columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
+          contentContainerStyle={styles.listContent}
+          renderItem={({ item }) => (
+            <View style={numColumns > 1 ? { flex: 1 / numColumns } : undefined}>
+              <TotpCard
+                account={item}
+                onCopy={handleCopy}
+                onDelete={(id) => {
+                  Alert.alert('Delete Account', `Delete ${item.issuer}?`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: () => deleteAccount(id) },
+                  ]);
+                }}
+              />
+            </View>
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <View style={[styles.emptyIconCircle, { backgroundColor: theme.surfaceHighlight }]}>
+                <ShieldIcon size={36} color={theme.primary} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: theme.heading }]}>
+                No Accounts Yet
+              </Text>
+              <Text style={[styles.emptySubtitle, { color: theme.textMuted }]}>
+                Scan a 2FA QR code or enter your secret key manually to protect your digital accounts.
+              </Text>
+
+              <View style={styles.emptyActionsRow}>
+                <Button
+                  title="Scan QR Code"
+                  size="md"
+                  onPress={() => router.push('/(app)/scan')}
+                  style={styles.emptyActionBtn}
+                />
+                <Button
+                  title="Enter Key Manually"
+                  size="md"
+                  variant="secondary"
+                  onPress={() => router.push('/(app)/add-manual')}
+                  style={styles.emptyActionBtn}
+                />
+              </View>
+            </View>
+          }
+        />
       </View>
     </SafeAreaView>
   );
@@ -304,32 +468,57 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
+  },
+  mainContainer: {
+    flex: 1,
+    maxWidth: 1280,
+    width: '100%',
+    alignSelf: 'center',
   },
   lockedContainer: {
     flex: 1,
-    backgroundColor: Colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     padding: Spacing.xl,
   },
-  lockIcon: {
-    fontSize: 54,
-    marginBottom: Spacing.md,
+  lockedTopBar: {
+    position: 'absolute',
+    top: Spacing.lg,
+    left: Spacing.lg,
+    right: Spacing.lg,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  lockedCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  lockedIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.lg,
   },
   lockedTitle: {
     fontSize: 24,
     fontWeight: '800',
-    color: Colors.text,
+    fontFamily: Typography.fontFamilyHeading,
     marginBottom: Spacing.xs,
+    textAlign: 'center',
   },
   lockedSubtitle: {
     fontSize: 14,
-    color: Colors.textMuted,
+    lineHeight: 21,
+    fontFamily: Typography.fontFamilyBody,
     textAlign: 'center',
-    lineHeight: 20,
     marginBottom: Spacing.xl,
-    paddingHorizontal: Spacing.lg,
   },
   unlockBtn: {
     width: '100%',
@@ -340,27 +529,28 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    backgroundColor: 'rgba(56, 37, 40, 0.65)',
     justifyContent: 'center',
     padding: Spacing.lg,
   },
   modalContent: {
-    backgroundColor: Colors.cardBackground,
-    borderRadius: Radius.lg,
+    maxWidth: 460,
+    width: '100%',
+    alignSelf: 'center',
+    borderRadius: Radius.xl,
     padding: Spacing.xl,
     borderWidth: 1,
-    borderColor: Colors.cardBorder,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.text,
-    marginBottom: Spacing.xs,
+    fontSize: 22,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
+    marginBottom: 6,
   },
   modalSubtitle: {
     fontSize: 13,
-    color: Colors.textMuted,
-    lineHeight: 18,
+    lineHeight: 19,
+    fontFamily: Typography.fontFamilyBody,
     marginBottom: Spacing.lg,
   },
   modalBtn: {
@@ -368,155 +558,183 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   recoveryBox: {
-    backgroundColor: '#0A0D14',
     padding: Spacing.md,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Colors.primaryMuted,
     marginBottom: Spacing.md,
   },
   recoveryText: {
-    color: Colors.primary,
-    fontSize: 15,
-    lineHeight: 24,
+    fontSize: 14,
+    lineHeight: 22,
     fontWeight: '600',
+    fontFamily: Typography.fontFamilyMono,
+  },
+  feedbackToast: {
+    position: 'absolute',
+    top: Spacing.md,
+    alignSelf: 'center',
+    zIndex: 999,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+  },
+  feedbackText: {
+    color: '#FFF8F2',
+    fontWeight: '700',
+    fontSize: 13,
+    fontFamily: Typography.fontFamilyBody,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
+    paddingTop: Spacing.md,
     paddingBottom: Spacing.md,
   },
-  logo: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: Colors.primary,
-    letterSpacing: 3,
-  },
-  userBadge: {
-    fontSize: 12,
-    color: Colors.textDim,
-  },
-  userRow: {
+  brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    flex: 1,
+  },
+  logoMark: {
+    width: 38,
+    height: 38,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoMarkText: {
+    color: '#FFF8F2',
+    fontSize: 20,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
+  },
+  brandTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
+    letterSpacing: 1.5,
+  },
+  userStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
     marginTop: 2,
   },
+  userBadge: {
+    fontSize: 12,
+    fontFamily: Typography.fontFamilyBody,
+    maxWidth: 180,
+  },
   syncPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: Radius.sm,
-    backgroundColor: Colors.cardBorder,
-  },
-  syncPillSynced: {
-    backgroundColor: Colors.primaryMuted,
-  },
-  syncPillConflict: {
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
-  },
-  syncPillSyncing: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
   },
   syncPillText: {
     fontSize: 9,
     fontWeight: '800',
-    color: Colors.primary,
     letterSpacing: 0.5,
   },
-  settingsButton: {
-    width: 40,
-    height: 40,
+  headerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  iconButton: {
+    width: 38,
+    height: 38,
     borderRadius: Radius.full,
-    backgroundColor: Colors.cardBackground,
     borderWidth: 1,
-    borderColor: Colors.cardBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  settingsIcon: {
-    fontSize: 18,
-    color: Colors.textMuted,
+  desktopAddBtn: {
+    marginLeft: Spacing.xs,
   },
-  feedbackToast: {
-    backgroundColor: Colors.primaryMuted,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    marginHorizontal: Spacing.lg,
-    borderRadius: Radius.md,
-    paddingVertical: Spacing.sm,
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  feedbackText: {
-    color: Colors.primary,
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  searchContainer: {
+  heroBanner: {
     paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.xs,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.md,
+  },
+  pageHeading: {
+    fontSize: 28,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
+    letterSpacing: -0.5,
+  },
+  pageSubtitle: {
+    fontSize: 14,
+    marginTop: 4,
+    fontFamily: Typography.fontFamilyBody,
+  },
+  searchAndActionsRow: {
+    marginTop: Spacing.md,
+    gap: Spacing.sm,
+  },
+  searchWrapper: {
+    flex: 1,
   },
   searchInput: {
     height: 44,
   },
+  quickAddRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: -Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  quickBtn: {
+    flex: 1,
+  },
   listContent: {
     paddingHorizontal: Spacing.lg,
-    paddingBottom: 100,
+    paddingBottom: Spacing.xxl,
+  },
+  columnWrapper: {
+    gap: Spacing.md,
   },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 80,
+    paddingVertical: 64,
     paddingHorizontal: Spacing.xl,
   },
-  emptyTitle: {
-    color: Colors.text,
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: Spacing.xs,
-  },
-  emptySubtitle: {
-    color: Colors.textDim,
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  fabRow: {
-    position: 'absolute',
-    bottom: Spacing.lg,
-    left: Spacing.lg,
-    right: Spacing.lg,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: Spacing.md,
-  },
-  fab: {
-    flex: 1,
-    height: 52,
-    borderRadius: Radius.lg,
+  emptyIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 4,
+    marginBottom: Spacing.md,
   },
-  fabPrimary: {
-    backgroundColor: Colors.primary,
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
+    marginBottom: 6,
   },
-  fabSecondary: {
-    backgroundColor: Colors.cardBackground,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
+  emptySubtitle: {
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+    maxWidth: 380,
+    fontFamily: Typography.fontFamilyBody,
+    marginBottom: Spacing.xl,
   },
-  fabPrimaryText: {
-    color: '#000000',
-    fontWeight: '700',
-    fontSize: 16,
+  emptyActionsRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
-  fabSecondaryText: {
-    color: Colors.text,
-    fontWeight: '600',
-    fontSize: 15,
+  emptyActionBtn: {
+    minWidth: 160,
   },
 });

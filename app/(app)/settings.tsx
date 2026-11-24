@@ -1,19 +1,31 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Switch } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Alert,
+  TouchableOpacity,
+  Switch,
+  ScrollView,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/store/authStore';
 import { useVaultStore } from '../../src/store/vaultStore';
 import { useSyncStore } from '../../src/store/syncStore';
+import { useTheme } from '../../src/store/themeStore';
 import { Button } from '../../src/components/Button';
-import { Colors, Radius, Spacing } from '../../src/components/tokens';
+import { ThemeToggle } from '../../src/components/ThemeToggle';
 import { KeystoreService } from '../../src/core/crypto';
+import { Radius, Spacing, Typography, Shadows, Palette } from '../../src/components/tokens';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { user, signOut } = useAuthStore();
   const { lock, accounts, resetVault, vaultKey, setAccountsFromSync } = useVaultStore();
   const { triggerSync, syncState, lastSyncedAt, conflictsCount } = useSyncStore();
+  const { theme, isDark } = useTheme();
+
   const [signingOut, setSigningOut] = useState(false);
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
 
@@ -28,7 +40,10 @@ export default function SettingsScreen() {
 
   const handleSync = async () => {
     if (!user || !vaultKey) {
-      Alert.alert('Sync Offline', 'Please authenticate with Supabase and unlock your vault to sync.');
+      Alert.alert(
+        'Sync Offline',
+        'Please authenticate with Supabase and unlock your vault to synchronize credentials.'
+      );
       return;
     }
     await triggerSync(user.id, vaultKey, accounts, setAccountsFromSync);
@@ -44,7 +59,7 @@ export default function SettingsScreen() {
   const handleResetVault = () => {
     Alert.alert(
       'Reset Local Vault',
-      'This will erase all locally stored credentials and keys from this device. Are you sure?',
+      'This will erase all locally stored credentials and cryptographic keys from this device. Are you sure?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -73,101 +88,185 @@ export default function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Vault Settings</Text>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.closeText}>Done</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account & Cloud</Text>
-        <View style={styles.card}>
-          <Text style={styles.label}>Authenticated User</Text>
-          <Text style={styles.value}>{user?.email || 'Offline Encrypted Vault'}</Text>
-
-          <View style={styles.divider} />
-
-          <Text style={styles.label}>Total Active Accounts</Text>
-          <Text style={styles.value}>{accounts.length} credentials</Text>
-
-          <View style={styles.divider} />
-
-          <Text style={styles.label}>Sync Status</Text>
-          <Text style={[styles.value, syncState === 'synced' && styles.syncedText]}>
-            {syncState.toUpperCase()} {conflictsCount > 0 ? `(${conflictsCount} conflicts resolved)` : ''}
-          </Text>
-
-          <Text style={styles.label}>Last Cloud Synchronization</Text>
-          <Text style={styles.value}>
-            {lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : 'Never / Pending'}
-          </Text>
-
-          <Button
-            title={syncState === 'syncing' ? 'Synchronizing...' : 'Sync Now'}
-            variant="outline"
-            loading={syncState === 'syncing'}
-            onPress={handleSync}
-            style={styles.syncBtn}
-          />
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Multi-Device Synchronization</Text>
-        <Button
-          title="Manage Enrolled Devices"
-          variant="secondary"
-          onPress={() => router.push('/(app)/devices')}
-          style={styles.actionBtn}
-        />
-        <Button
-          title="Enroll Another Device / Restore"
-          variant="outline"
-          onPress={() => router.push('/(app)/enrollment')}
-          style={styles.actionBtn}
-        />
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Security Preferences</Text>
-        <View style={styles.card}>
-          <View style={styles.switchRow}>
-            <View style={styles.switchInfo}>
-              <Text style={styles.switchLabel}>Biometric Unlock</Text>
-              <Text style={styles.switchSublabel}>Require fingerprint or face unlock to access vault key</Text>
-            </View>
-            <Switch
-              value={biometricsEnabled}
-              onValueChange={handleToggleBiometrics}
-              trackColor={{ false: Colors.cardBorder, true: Colors.primary }}
-            />
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={styles.contentWrapper}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <Text style={[styles.title, { color: theme.heading }]}>Vault Settings</Text>
+            <Text style={[styles.subtitle, { color: theme.textMuted }]}>
+              Security controls & cryptographic synchronization
+            </Text>
           </View>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={[styles.closeBtn, { backgroundColor: theme.surface }]}
+          >
+            <Text style={[styles.closeText, { color: theme.textMuted }]}>✕</Text>
+          </TouchableOpacity>
         </View>
-      </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Security Actions</Text>
-        <Button
-          title="Lock Vault Now"
-          variant="secondary"
-          onPress={handleLockVault}
-          style={styles.actionBtn}
-        />
-        <Button
-          title="Sign Out"
-          variant="outline"
-          loading={signingOut}
-          onPress={handleSignOut}
-          style={styles.actionBtn}
-        />
-        <Button
-          title="Reset Local Vault"
-          variant="danger"
-          onPress={handleResetVault}
-          style={styles.actionBtn}
-        />
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          {/* Appearance Section */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>
+              APPEARANCE & THEME
+            </Text>
+            <View
+              style={[
+                styles.card,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+                Shadows.subtle,
+              ]}
+            >
+              <View style={styles.themeRow}>
+                <View>
+                  <Text style={[styles.themeLabel, { color: theme.text }]}>
+                    {isDark ? 'Dark Theme (Burgundy Charcoal)' : 'Light Theme (Warm Cream)'}
+                  </Text>
+                  <Text style={[styles.themeSublabel, { color: theme.textMuted }]}>
+                    Seamless switch across light cream and dark burgundy palettes
+                  </Text>
+                </View>
+                <ThemeToggle size={42} />
+              </View>
+            </View>
+          </View>
+
+          {/* Account & Cloud Section */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>
+              ACCOUNT & CLOUD VAULT
+            </Text>
+            <View
+              style={[
+                styles.card,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+                Shadows.subtle,
+              ]}
+            >
+              <Text style={[styles.label, { color: theme.textMuted }]}>Authenticated User</Text>
+              <Text style={[styles.value, { color: theme.text }]}>
+                {user?.email || 'Offline Encrypted Vault'}
+              </Text>
+
+              <View style={[styles.divider, { backgroundColor: theme.borderLight }]} />
+
+              <Text style={[styles.label, { color: theme.textMuted }]}>Total Active Accounts</Text>
+              <Text style={[styles.value, { color: theme.text }]}>
+                {accounts.length} encrypted credentials
+              </Text>
+
+              <View style={[styles.divider, { backgroundColor: theme.borderLight }]} />
+
+              <Text style={[styles.label, { color: theme.textMuted }]}>Sync Status</Text>
+              <Text
+                style={[
+                  styles.value,
+                  { color: syncState === 'synced' ? theme.success : theme.primary },
+                ]}
+              >
+                {syncState.toUpperCase()}{' '}
+                {conflictsCount > 0 ? `(${conflictsCount} conflicts resolved)` : ''}
+              </Text>
+
+              <Text style={[styles.label, { color: theme.textMuted }]}>
+                Last Cloud Synchronization
+              </Text>
+              <Text style={[styles.value, { color: theme.text }]}>
+                {lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : 'Never / Pending'}
+              </Text>
+
+              <Button
+                title={syncState === 'syncing' ? 'Synchronizing...' : 'Sync Now'}
+                variant="secondary"
+                loading={syncState === 'syncing'}
+                onPress={handleSync}
+                style={styles.syncBtn}
+              />
+            </View>
+          </View>
+
+          {/* Multi-Device Synchronization */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>
+              MULTI-DEVICE SYNCHRONIZATION
+            </Text>
+            <View style={styles.actionCol}>
+              <Button
+                title="Manage Enrolled Devices"
+                variant="secondary"
+                onPress={() => router.push('/(app)/devices')}
+                style={styles.actionBtn}
+              />
+              <Button
+                title="Enroll Another Device / Restore Vault"
+                variant="outline"
+                onPress={() => router.push('/(app)/enrollment')}
+                style={styles.actionBtn}
+              />
+            </View>
+          </View>
+
+          {/* Hardware Security Preferences */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>
+              HARDWARE KEYSTORE SECURITY
+            </Text>
+            <View
+              style={[
+                styles.card,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+                Shadows.subtle,
+              ]}
+            >
+              <View style={styles.switchRow}>
+                <View style={styles.switchInfo}>
+                  <Text style={[styles.switchLabel, { color: theme.text }]}>
+                    Biometric Hardware Unlock
+                  </Text>
+                  <Text style={[styles.switchSublabel, { color: theme.textMuted }]}>
+                    Require fingerprint or face authentication before unwrapping Vault Key
+                  </Text>
+                </View>
+                <Switch
+                  value={biometricsEnabled}
+                  onValueChange={handleToggleBiometrics}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                  thumbColor={biometricsEnabled ? Palette.lightBeige : '#F5E8DE'}
+                />
+              </View>
+            </View>
+          </View>
+
+          {/* Critical Security Actions */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>
+              SECURITY ACTIONS
+            </Text>
+            <View style={styles.actionCol}>
+              <Button
+                title="Lock Vault Now"
+                variant="secondary"
+                onPress={handleLockVault}
+                style={styles.actionBtn}
+              />
+              <Button
+                title="Sign Out"
+                variant="outline"
+                loading={signingOut}
+                onPress={handleSignOut}
+                style={styles.actionBtn}
+              />
+              <Button
+                title="Erase Local Vault"
+                variant="danger"
+                onPress={handleResetVault}
+                style={styles.actionBtn}
+              />
+            </View>
+          </View>
+        </ScrollView>
       </View>
     </SafeAreaView>
   );
@@ -176,61 +275,97 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+  },
+  contentWrapper: {
+    flex: 1,
     padding: Spacing.lg,
+    maxWidth: 600,
+    width: '100%',
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.lg,
   },
   title: {
-    color: Colors.text,
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
+  },
+  subtitle: {
+    fontSize: 13,
+    marginTop: 2,
+    fontFamily: Typography.fontFamilyBody,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   closeText: {
-    color: Colors.primary,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  scroll: {
+    paddingBottom: Spacing.xxl,
   },
   section: {
     marginBottom: Spacing.xl,
   },
   sectionTitle: {
-    color: Colors.textMuted,
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
     marginBottom: Spacing.sm,
   },
   card: {
-    backgroundColor: Colors.cardBackground,
     borderRadius: Radius.lg,
     padding: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.cardBorder,
+  },
+  themeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  themeLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    fontFamily: Typography.fontFamilyHeading,
+  },
+  themeSublabel: {
+    fontSize: 12,
+    marginTop: 2,
+    fontFamily: Typography.fontFamilyBody,
+    maxWidth: 280,
   },
   label: {
-    color: Colors.textDim,
     fontSize: 12,
+    fontFamily: Typography.fontFamilyBody,
   },
   value: {
-    color: Colors.text,
     fontSize: 15,
     fontWeight: '600',
     marginTop: 2,
     marginBottom: Spacing.xs,
-  },
-  syncedText: {
-    color: Colors.primary,
+    fontFamily: Typography.fontFamilyBody,
   },
   divider: {
     height: 1,
-    backgroundColor: Colors.cardBorder,
     marginVertical: Spacing.sm,
+  },
+  syncBtn: {
+    marginTop: Spacing.sm,
+  },
+  actionCol: {
+    gap: Spacing.sm,
+  },
+  actionBtn: {
+    width: '100%',
   },
   switchRow: {
     flexDirection: 'row',
@@ -242,20 +377,14 @@ const styles = StyleSheet.create({
     marginRight: Spacing.md,
   },
   switchLabel: {
-    color: Colors.text,
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
+    fontFamily: Typography.fontFamilyHeading,
   },
   switchSublabel: {
-    color: Colors.textDim,
     fontSize: 12,
     marginTop: 2,
-  },
-  syncBtn: {
-    marginTop: Spacing.md,
-    height: 40,
-  },
-  actionBtn: {
-    marginBottom: Spacing.sm,
+    lineHeight: 18,
+    fontFamily: Typography.fontFamilyBody,
   },
 });

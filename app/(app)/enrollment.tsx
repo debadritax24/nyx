@@ -1,20 +1,29 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Alert,
+  TouchableOpacity,
+  ScrollView,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/store/authStore';
 import { useVaultStore } from '../../src/store/vaultStore';
 import { useSyncStore } from '../../src/store/syncStore';
+import { useTheme } from '../../src/store/themeStore';
 import { VaultService } from '../../src/services/vaultService';
 import { Input } from '../../src/components/Input';
 import { Button } from '../../src/components/Button';
-import { Colors, Radius, Spacing } from '../../src/components/tokens';
+import { Radius, Spacing, Typography, Shadows } from '../../src/components/tokens';
 
 export default function EnrollmentScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
   const { unlockWithKey, setVaultId, accounts, setAccountsFromSync } = useVaultStore();
   const { triggerSync } = useSyncStore();
+  const { theme } = useTheme();
 
   const [mode, setMode] = useState<'passphrase' | 'recovery'>('passphrase');
   const [passphrase, setPassphrase] = useState('');
@@ -65,72 +74,121 @@ export default function EnrollmentScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Device Enrollment</Text>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.closeText}>Cancel</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.subtitle}>
-          A cloud-encrypted vault exists for <Text style={styles.emailHighlight}>{user?.email}</Text>. Authenticate with your credentials to obtain the Vault Key locally.
-        </Text>
-
-        <View style={styles.tabRow}>
-          <TouchableOpacity
-            onPress={() => setMode('passphrase')}
-            style={[styles.tab, mode === 'passphrase' && styles.activeTab]}
-          >
-            <Text style={[styles.tabText, mode === 'passphrase' && styles.activeTabText]}>
-              Master Passphrase
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={styles.contentWrapper}>
+        <View style={styles.header}>
+          <View>
+            <Text style={[styles.title, { color: theme.heading }]}>Device Enrollment</Text>
+            <Text style={[styles.subtitle, { color: theme.textMuted }]}>
+              Unwrap your zero-knowledge Vault Key onto this device
             </Text>
-          </TouchableOpacity>
-
+          </View>
           <TouchableOpacity
-            onPress={() => setMode('recovery')}
-            style={[styles.tab, mode === 'recovery' && styles.activeTab]}
+            onPress={() => router.back()}
+            style={[styles.closeBtn, { backgroundColor: theme.surface }]}
           >
-            <Text style={[styles.tabText, mode === 'recovery' && styles.activeTabText]}>
-              24-Word Code
-            </Text>
+            <Text style={[styles.closeText, { color: theme.textMuted }]}>✕</Text>
           </TouchableOpacity>
         </View>
 
-        {mode === 'passphrase' ? (
-          <View style={styles.form}>
-            <Input
-              label="Master Passphrase"
-              placeholder="Enter your master passphrase"
-              secureTextEntry
-              value={passphrase}
-              onChangeText={setPassphrase}
-            />
-          </View>
-        ) : (
-          <View style={styles.form}>
-            <Input
-              label="24-Word Recovery Code"
-              placeholder="e.g. abandon ability able about above absent..."
-              multiline
-              numberOfLines={4}
-              value={recoveryCode}
-              onChangeText={setRecoveryCode}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.multilineInput}
-            />
-          </View>
-        )}
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+              Shadows.card,
+            ]}
+          >
+            <Text style={[styles.infoText, { color: theme.textMuted }]}>
+              A cloud-encrypted vault exists for{' '}
+              <Text style={[styles.emailHighlight, { color: theme.primary }]}>
+                {user?.email}
+              </Text>
+              . Authenticate to obtain the Vault Key locally.
+            </Text>
 
-        <Button
-          title={loading ? 'Unwrapping Vault Key...' : 'Enroll & Synchronize Device'}
-          onPress={handleEnroll}
-          loading={loading}
-          style={styles.submitBtn}
-        />
-      </ScrollView>
+            {/* Mode Tabs */}
+            <View
+              style={[
+                styles.tabRow,
+                { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
+              ]}
+            >
+              <TouchableOpacity
+                onPress={() => setMode('passphrase')}
+                style={[
+                  styles.tab,
+                  mode === 'passphrase' && {
+                    backgroundColor: theme.primary,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.tabText,
+                    {
+                      color: mode === 'passphrase' ? theme.primaryText : theme.textMuted,
+                    },
+                  ]}
+                >
+                  Master Passphrase
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setMode('recovery')}
+                style={[
+                  styles.tab,
+                  mode === 'recovery' && {
+                    backgroundColor: theme.primary,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.tabText,
+                    {
+                      color: mode === 'recovery' ? theme.primaryText : theme.textMuted,
+                    },
+                  ]}
+                >
+                  24-Word Code
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {mode === 'passphrase' ? (
+              <Input
+                label="Master Passphrase"
+                placeholder="Enter your master passphrase"
+                secureTextEntry
+                value={passphrase}
+                onChangeText={setPassphrase}
+              />
+            ) : (
+              <Input
+                label="24-Word Recovery Code"
+                placeholder="abandon ability able about above absent..."
+                multiline
+                numberOfLines={4}
+                value={recoveryCode}
+                onChangeText={setRecoveryCode}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.multilineInput}
+              />
+            )}
+
+            <Button
+              title={loading ? 'Unwrapping Key...' : 'Enroll & Synchronize'}
+              size="lg"
+              onPress={handleEnroll}
+              loading={loading}
+              style={styles.submitBtn}
+            />
+          </View>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -138,8 +196,13 @@ export default function EnrollmentScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+  },
+  contentWrapper: {
+    flex: 1,
     padding: Spacing.lg,
+    maxWidth: 580,
+    width: '100%',
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -148,57 +211,62 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.text,
-  },
-  closeText: {
-    color: Colors.primary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  content: {
-    paddingBottom: Spacing.xl,
+    fontSize: 24,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
   },
   subtitle: {
-    fontSize: 14,
-    color: Colors.textMuted,
-    lineHeight: 20,
-    marginBottom: Spacing.lg,
+    fontSize: 13,
+    marginTop: 2,
+    fontFamily: Typography.fontFamilyBody,
   },
-  emailHighlight: {
-    color: Colors.primary,
-    fontWeight: '600',
-  },
-  tabRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  tab: {
-    flex: 1,
-    height: 42,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.cardBackground,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  activeTab: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primaryMuted,
+  closeText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  content: {
+    paddingBottom: Spacing.xxl,
+  },
+  card: {
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
+    borderWidth: 1,
+  },
+  infoText: {
+    fontSize: 14,
+    lineHeight: 22,
+    fontFamily: Typography.fontFamilyBody,
+    marginBottom: Spacing.lg,
+  },
+  emailHighlight: {
+    fontWeight: '700',
+  },
+  tabRow: {
+    flexDirection: 'row',
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    padding: 4,
+    marginBottom: Spacing.lg,
+    gap: 4,
+  },
+  tab: {
+    flex: 1,
+    height: 40,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tabText: {
-    color: Colors.textMuted,
     fontSize: 13,
-    fontWeight: '600',
-  },
-  activeTabText: {
-    color: Colors.primary,
-  },
-  form: {
-    marginBottom: Spacing.lg,
+    fontWeight: '700',
+    fontFamily: Typography.fontFamilyBody,
   },
   multilineInput: {
     height: 100,

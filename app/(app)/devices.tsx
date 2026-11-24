@@ -1,12 +1,23 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, Alert, TouchableOpacity } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  Alert,
+  TouchableOpacity,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DeviceMetadata, DeviceService } from '../../src/services/deviceService';
-import { Colors, Radius, Spacing } from '../../src/components/tokens';
+import { useTheme } from '../../src/store/themeStore';
+import { DeviceIcon } from '../../src/components/Icons';
+import { Radius, Spacing, Typography, Shadows } from '../../src/components/tokens';
 
 export default function DevicesScreen() {
   const router = useRouter();
+  const { theme } = useTheme();
+
   const [devices, setDevices] = useState<DeviceMetadata[]>([]);
   const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,60 +65,95 @@ export default function DevicesScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Enrolled Devices</Text>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.closeText}>Done</Text>
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={styles.contentWrapper}>
+        <View style={styles.header}>
+          <View>
+            <Text style={[styles.title, { color: theme.heading }]}>Enrolled Devices</Text>
+            <Text style={[styles.subtitle, { color: theme.textMuted }]}>
+              Devices enrolled in your zero-knowledge synchronization ring
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={[styles.closeBtn, { backgroundColor: theme.surface }]}
+          >
+            <Text style={[styles.closeText, { color: theme.textMuted }]}>✕</Text>
+          </TouchableOpacity>
+        </View>
 
-      <Text style={styles.subtitle}>
-        Devices enrolled in your zero-knowledge synchronization ring. Only devices holding your Vault Key can decrypt records.
-      </Text>
+        <FlatList
+          data={devices}
+          keyExtractor={(item) => item.id}
+          refreshing={loading}
+          onRefresh={loadDevices}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => {
+            const isThisDevice = item.id === currentDeviceId;
+            return (
+              <View
+                style={[
+                  styles.deviceCard,
+                  {
+                    backgroundColor: theme.surface,
+                    borderColor: isThisDevice ? theme.primary : theme.border,
+                  },
+                  Shadows.subtle,
+                ]}
+              >
+                <View style={styles.deviceRow}>
+                  <View style={[styles.iconBox, { backgroundColor: theme.surfaceHighlight }]}>
+                    <DeviceIcon size={20} color={theme.primary} />
+                  </View>
 
-      <FlatList
-        data={devices}
-        keyExtractor={(item) => item.id}
-        refreshing={loading}
-        onRefresh={loadDevices}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => {
-          const isThisDevice = item.id === currentDeviceId;
-          return (
-            <View style={[styles.deviceCard, isThisDevice && styles.thisDeviceCard]}>
-              <View style={styles.deviceInfo}>
-                <View style={styles.nameRow}>
-                  <Text style={styles.deviceName}>{item.device_name || 'Android Device'}</Text>
-                  {isThisDevice && <View style={styles.thisBadge}><Text style={styles.thisBadgeText}>THIS DEVICE</Text></View>}
+                  <View style={styles.deviceInfo}>
+                    <View style={styles.nameRow}>
+                      <Text style={[styles.deviceName, { color: theme.text }]}>
+                        {item.device_name || 'Personal Device'}
+                      </Text>
+                      {isThisDevice && (
+                        <View style={[styles.thisBadge, { backgroundColor: theme.surfaceHighlight }]}>
+                          <Text style={[styles.thisBadgeText, { color: theme.secondaryText }]}>
+                            THIS DEVICE
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[styles.deviceMeta, { color: theme.textMuted }]}>
+                      Platform: {item.platform.toUpperCase()} • Registered:{' '}
+                      {new Date(item.created_at).toLocaleDateString()}
+                    </Text>
+                    <Text style={[styles.deviceMeta, { color: theme.textDim }]}>
+                      Last Active:{' '}
+                      {item.last_active_at
+                        ? new Date(item.last_active_at).toLocaleString()
+                        : 'Just now'}
+                    </Text>
+                  </View>
+
+                  {!isThisDevice && (
+                    <TouchableOpacity
+                      onPress={() => handleRevokeDevice(item)}
+                      style={[styles.revokeBtn, { backgroundColor: theme.dangerMuted }]}
+                    >
+                      <Text style={[styles.revokeText, { color: theme.danger }]}>Revoke</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-                <Text style={styles.deviceMeta}>
-                  Platform: {item.platform.toUpperCase()} • Registered: {new Date(item.created_at).toLocaleDateString()}
-                </Text>
-                <Text style={styles.deviceMeta}>
-                  Last Active: {item.last_active_at ? new Date(item.last_active_at).toLocaleString() : 'Just now'}
+              </View>
+            );
+          }}
+          ListEmptyComponent={
+            !loading ? (
+              <View style={styles.empty}>
+                <Text style={[styles.emptyText, { color: theme.textMuted }]}>
+                  No devices registered in sync ring yet.
                 </Text>
               </View>
-
-              {!isThisDevice && (
-                <TouchableOpacity
-                  onPress={() => handleRevokeDevice(item)}
-                  style={styles.revokeBtn}
-                >
-                  <Text style={styles.revokeText}>Revoke</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          );
-        }}
-        ListEmptyComponent={
-          !loading ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyText}>No devices registered yet.</Text>
-            </View>
-          ) : undefined
-        }
-      />
+            ) : undefined
+          }
+        />
+      </View>
     </SafeAreaView>
   );
 }
@@ -115,97 +161,106 @@ export default function DevicesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+  },
+  contentWrapper: {
+    flex: 1,
     padding: Spacing.lg,
+    maxWidth: 600,
+    width: '100%',
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.text,
-  },
-  closeText: {
-    color: Colors.primary,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
   },
   subtitle: {
     fontSize: 13,
-    color: Colors.textMuted,
-    lineHeight: 18,
-    marginBottom: Spacing.lg,
+    marginTop: 2,
+    fontFamily: Typography.fontFamilyBody,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeText: {
+    fontSize: 16,
+    fontWeight: '700',
   },
   list: {
-    paddingBottom: Spacing.xl,
+    paddingBottom: Spacing.xxl,
   },
   deviceCard: {
-    backgroundColor: Colors.cardBackground,
     borderRadius: Radius.lg,
     padding: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  deviceRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
   },
-  thisDeviceCard: {
-    borderColor: Colors.primary,
-    backgroundColor: 'rgba(0, 240, 255, 0.05)',
+  iconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
   },
   deviceInfo: {
     flex: 1,
-    marginRight: Spacing.md,
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
-    marginBottom: Spacing.xs,
+    gap: Spacing.xs,
+    marginBottom: 2,
   },
   deviceName: {
-    color: Colors.text,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
+    fontFamily: Typography.fontFamilyHeading,
   },
   thisBadge: {
-    backgroundColor: Colors.primaryMuted,
-    paddingHorizontal: Spacing.xs,
+    paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: Radius.sm,
   },
   thisBadgeText: {
-    color: Colors.primary,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
+    letterSpacing: 0.5,
   },
   deviceMeta: {
-    color: Colors.textDim,
     fontSize: 12,
     marginTop: 2,
+    fontFamily: Typography.fontFamilyBody,
   },
   revokeBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: Radius.md,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: Radius.sm,
   },
   revokeText: {
-    color: Colors.danger,
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
   },
   empty: {
     alignItems: 'center',
-    paddingTop: 40,
+    paddingTop: 48,
   },
   emptyText: {
-    color: Colors.textDim,
     fontSize: 14,
+    fontFamily: Typography.fontFamilyBody,
   },
 });
