@@ -6,15 +6,18 @@ import {
   Alert,
   TouchableOpacity,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Input } from '../../src/components/Input';
 import { Button } from '../../src/components/Button';
 import { ThemeToggle } from '../../src/components/ThemeToggle';
+import { NYXLogo } from '../../src/components/NYXLogo';
 import { useTheme } from '../../src/store/themeStore';
 import { AuthService } from '../../src/services/auth';
-import { Radius, Spacing, Typography } from '../../src/components/tokens';
+import { Radius, Spacing, Typography, Shadows } from '../../src/components/tokens';
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
@@ -43,54 +46,76 @@ export default function ResetPasswordScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
-            <Text style={[styles.backLink, { color: theme.primary }]}>← Back to Sign In</Text>
-          </TouchableOpacity>
-          <ThemeToggle size={38} />
-        </View>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.keyboardView}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Top Bar */}
+          <View style={styles.topBar}>
+            <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
+              <Text style={[styles.backLink, { color: theme.primary }]}>← Back</Text>
+            </TouchableOpacity>
+            <ThemeToggle size={38} />
+          </View>
 
-        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={[styles.title, { color: theme.heading }]}>Reset Password</Text>
-          <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-            Enter your account email to receive cryptographic password reset instructions.
-          </Text>
+          {/* Hero Branding */}
+          <View style={styles.brandHero}>
+            <NYXLogo size="md" centered />
+            <Text style={[styles.title, { color: theme.heading }]}>Reset Password</Text>
+            <Text style={[styles.subtitle, { color: theme.textMuted }]}>
+              Enter your email to receive cryptographic password reset instructions.
+            </Text>
+          </View>
 
-          {sent ? (
-            <View style={[styles.sentBox, { backgroundColor: theme.surfaceHighlight }]}>
-              <Text style={[styles.sentTitle, { color: theme.heading }]}>Recovery Dispatched</Text>
-              <Text style={[styles.sentDesc, { color: theme.text }]}>
-                If an account exists for {email}, a recovery link has been sent to your inbox.
-              </Text>
-              <Button
-                title="Return to Sign In"
-                onPress={() => router.replace('/(auth)/login')}
-                style={styles.returnBtn}
-              />
-            </View>
-          ) : (
-            <View style={styles.form}>
-              <Input
-                label="Email Address"
-                placeholder="you@example.com"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={email}
-                onChangeText={setEmail}
-              />
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+              Shadows.card,
+            ]}
+          >
+            {sent ? (
+              <View style={[styles.sentBox, { backgroundColor: theme.surfaceHighlight }]}>
+                <Text style={[styles.sentTitle, { color: theme.heading }]}>
+                  Recovery Dispatched
+                </Text>
+                <Text style={[styles.sentDesc, { color: theme.text }]}>
+                  If an account exists for {email}, recovery instructions have been sent.
+                </Text>
+                <Button
+                  title="Return to Sign In"
+                  onPress={() => router.replace('/(auth)/login')}
+                  style={styles.returnBtn}
+                />
+              </View>
+            ) : (
+              <View style={styles.form}>
+                <Input
+                  label="Account Email"
+                  placeholder="you@example.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  value={email}
+                  onChangeText={setEmail}
+                />
 
-              <Button
-                title="Send Recovery Link"
-                size="lg"
-                onPress={handleReset}
-                loading={loading}
-                style={styles.submitBtn}
-              />
-            </View>
-          )}
-        </View>
-      </ScrollView>
+                <Button
+                  title="Send Recovery Link"
+                  size="lg"
+                  onPress={handleReset}
+                  loading={loading}
+                  style={styles.submitBtn}
+                />
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -99,11 +124,16 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  scroll: {
-    padding: Spacing.xl,
+  keyboardView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xl,
     flexGrow: 1,
     justifyContent: 'center',
-    maxWidth: 520,
+    maxWidth: 480,
     width: '100%',
     alignSelf: 'center',
   },
@@ -111,35 +141,42 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.lg,
   },
   backLink: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     fontFamily: Typography.fontFamilyBody,
+  },
+  brandHero: {
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
+    marginTop: Spacing.md,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: Typography.fontFamilyBody,
+    textAlign: 'center',
+    marginTop: 4,
   },
   card: {
     borderRadius: Radius.xl,
     padding: Spacing.xl,
     borderWidth: 1,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
-    marginBottom: 6,
-  },
-  subtitle: {
-    fontSize: 14,
-    lineHeight: 21,
-    fontFamily: Typography.fontFamilyBody,
-    marginBottom: Spacing.xl,
-  },
   form: {
     gap: Spacing.sm,
   },
   submitBtn: {
-    marginTop: Spacing.sm,
+    marginTop: Spacing.xs,
+    width: '100%',
   },
   sentBox: {
     padding: Spacing.lg,

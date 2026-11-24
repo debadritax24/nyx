@@ -6,6 +6,8 @@ import {
   Alert,
   TouchableOpacity,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,7 +18,12 @@ import { useTheme } from '../../src/store/themeStore';
 import { VaultService } from '../../src/services/vaultService';
 import { Input } from '../../src/components/Input';
 import { Button } from '../../src/components/Button';
-import { Radius, Spacing, Typography, Shadows } from '../../src/components/tokens';
+import {
+  ChevronLeftIcon,
+  ShieldIcon,
+  KeyIcon,
+} from '../../src/components/Icons';
+import { Radius, Spacing, Typography, Shadows, Palette } from '../../src/components/tokens';
 
 export default function EnrollmentScreen() {
   const router = useRouter();
@@ -29,6 +36,8 @@ export default function EnrollmentScreen() {
   const [passphrase, setPassphrase] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const wordCount = recoveryCode.trim().split(/\s+/).filter(Boolean).length;
 
   const handleEnroll = async () => {
     if (!user) {
@@ -74,24 +83,65 @@ export default function EnrollmentScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.contentWrapper}>
+    <SafeAreaView
+      edges={['top', 'left', 'right']}
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <View style={styles.header}>
-          <View>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={[styles.backBtn, { backgroundColor: theme.surface }]}
+            accessibilityLabel="Back"
+          >
+            <ChevronLeftIcon size={18} color={theme.text} />
+          </TouchableOpacity>
+          <View style={styles.headerTitleWrap}>
             <Text style={[styles.title, { color: theme.heading }]}>Device Enrollment</Text>
             <Text style={[styles.subtitle, { color: theme.textMuted }]}>
               Unwrap your zero-knowledge Vault Key onto this device
             </Text>
           </View>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={[styles.closeBtn, { backgroundColor: theme.surface }]}
-          >
-            <Text style={[styles.closeText, { color: theme.textMuted }]}>✕</Text>
-          </TouchableOpacity>
+          <View style={styles.headerSpacer} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Explanatory Security Banner */}
+          <View
+            style={[
+              styles.infoCard,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+              Shadows.subtle,
+            ]}
+          >
+            <View style={styles.infoRow}>
+              <View
+                style={[styles.shieldBox, { backgroundColor: Palette.primaryBurgundy }]}
+              >
+                <ShieldIcon size={20} color={Palette.lightBeige} />
+              </View>
+              <View style={styles.infoTextWrap}>
+                <Text style={[styles.infoTitle, { color: theme.heading }]}>
+                  Cryptographic Key Wrapping
+                </Text>
+                <Text style={[styles.infoText, { color: theme.textMuted }]}>
+                  An encrypted vault exists for{' '}
+                  <Text style={[styles.emailHighlight, { color: theme.heading }]}>
+                    {user?.email}
+                  </Text>
+                  . Authenticate to unwrap the 256-bit AES master key onto this device's hardware Keystore.
+                </Text>
+              </View>
+            </View>
+          </View>
+
           <View
             style={[
               styles.card,
@@ -99,14 +149,6 @@ export default function EnrollmentScreen() {
               Shadows.card,
             ]}
           >
-            <Text style={[styles.infoText, { color: theme.textMuted }]}>
-              A cloud-encrypted vault exists for{' '}
-              <Text style={[styles.emailHighlight, { color: theme.primary }]}>
-                {user?.email}
-              </Text>
-              . Authenticate to obtain the Vault Key locally.
-            </Text>
-
             {/* Mode Tabs */}
             <View
               style={[
@@ -119,7 +161,7 @@ export default function EnrollmentScreen() {
                 style={[
                   styles.tab,
                   mode === 'passphrase' && {
-                    backgroundColor: theme.primary,
+                    backgroundColor: Palette.primaryBurgundy,
                   },
                 ]}
               >
@@ -127,7 +169,7 @@ export default function EnrollmentScreen() {
                   style={[
                     styles.tabText,
                     {
-                      color: mode === 'passphrase' ? theme.primaryText : theme.textMuted,
+                      color: mode === 'passphrase' ? Palette.white : theme.textMuted,
                     },
                   ]}
                 >
@@ -140,7 +182,7 @@ export default function EnrollmentScreen() {
                 style={[
                   styles.tab,
                   mode === 'recovery' && {
-                    backgroundColor: theme.primary,
+                    backgroundColor: Palette.primaryBurgundy,
                   },
                 ]}
               >
@@ -148,35 +190,62 @@ export default function EnrollmentScreen() {
                   style={[
                     styles.tabText,
                     {
-                      color: mode === 'recovery' ? theme.primaryText : theme.textMuted,
+                      color: mode === 'recovery' ? Palette.white : theme.textMuted,
                     },
                   ]}
                 >
-                  24-Word Code
+                  24-Word Recovery Code
                 </Text>
               </TouchableOpacity>
             </View>
 
             {mode === 'passphrase' ? (
-              <Input
-                label="Master Passphrase"
-                placeholder="Enter your master passphrase"
-                secureTextEntry
-                value={passphrase}
-                onChangeText={setPassphrase}
-              />
+              <View>
+                <Input
+                  label="Master Passphrase"
+                  placeholder="Enter your master passphrase"
+                  secureTextEntry
+                  value={passphrase}
+                  onChangeText={setPassphrase}
+                />
+                <Text style={[styles.fieldHint, { color: theme.textDim }]}>
+                  The passphrase chosen when you initialized your NYX master vault.
+                </Text>
+              </View>
             ) : (
-              <Input
-                label="24-Word Recovery Code"
-                placeholder="abandon ability able about above absent..."
-                multiline
-                numberOfLines={4}
-                value={recoveryCode}
-                onChangeText={setRecoveryCode}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.multilineInput}
-              />
+              <View>
+                <Input
+                  label="24-Word Recovery Code"
+                  placeholder="abandon ability able about above absent absorb abstract absurd abuse..."
+                  multiline
+                  numberOfLines={4}
+                  value={recoveryCode}
+                  onChangeText={setRecoveryCode}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.multilineInput}
+                />
+                <View style={styles.counterRow}>
+                  <Text style={[styles.fieldHint, { color: theme.textDim }]}>
+                    Enter the BIP-39 mnemonic phrase generated during vault creation.
+                  </Text>
+                  <Text
+                    style={[
+                      styles.counterText,
+                      {
+                        color:
+                          wordCount === 24
+                            ? theme.success
+                            : wordCount > 0
+                            ? theme.warning
+                            : theme.textDim,
+                      },
+                    ]}
+                  >
+                    {wordCount} / 24 words
+                  </Text>
+                </View>
+              </View>
             )}
 
             <Button
@@ -184,11 +253,12 @@ export default function EnrollmentScreen() {
               size="lg"
               onPress={handleEnroll}
               loading={loading}
+              icon={<KeyIcon size={18} color={Palette.white} />}
               style={styles.submitBtn}
             />
           </View>
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -197,63 +267,91 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  contentWrapper: {
+  keyboardAvoid: {
     flex: 1,
-    padding: Spacing.lg,
-    maxWidth: 580,
-    width: '100%',
-    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.md,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
-  },
-  subtitle: {
-    fontSize: 13,
-    marginTop: 2,
-    fontFamily: Typography.fontFamilyBody,
-  },
-  closeBtn: {
+  backBtn: {
     width: 36,
     height: 36,
     borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: Spacing.sm,
   },
-  closeText: {
-    fontSize: 16,
-    fontWeight: '700',
+  headerTitleWrap: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontSize: 12,
+    fontFamily: Typography.fontFamilyBody,
+    marginTop: 1,
+  },
+  headerSpacer: {
+    width: 36,
   },
   content: {
+    paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xxl,
   },
-  card: {
-    borderRadius: Radius.xl,
-    padding: Spacing.xl,
+  infoCard: {
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
     borderWidth: 1,
+    marginBottom: Spacing.md,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  shieldBox: {
+    width: 38,
+    height: 38,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  infoTextWrap: {
+    flex: 1,
+  },
+  infoTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: Typography.fontFamilyHeading,
+    marginBottom: 2,
   },
   infoText: {
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 12,
+    lineHeight: 18,
     fontFamily: Typography.fontFamilyBody,
-    marginBottom: Spacing.lg,
   },
   emailHighlight: {
     fontWeight: '700',
+  },
+  card: {
+    borderRadius: Radius.xl,
+    padding: Spacing.lg,
+    borderWidth: 1,
   },
   tabRow: {
     flexDirection: 'row',
     borderRadius: Radius.md,
     borderWidth: 1,
-    padding: 4,
-    marginBottom: Spacing.lg,
+    padding: 3,
+    marginBottom: Spacing.md,
     gap: 4,
   },
   tab: {
@@ -264,14 +362,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     fontFamily: Typography.fontFamilyBody,
   },
+  fieldHint: {
+    fontSize: 11,
+    marginTop: -Spacing.xs,
+    marginBottom: Spacing.sm,
+    fontFamily: Typography.fontFamilyBody,
+  },
   multilineInput: {
-    height: 100,
+    minHeight: 100,
     textAlignVertical: 'top',
     paddingTop: Spacing.sm,
+    fontFamily: Typography.fontFamilyMono,
+    fontSize: 13,
+  },
+  counterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: -Spacing.xs,
+    marginBottom: Spacing.sm,
+  },
+  counterText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   submitBtn: {
     marginTop: Spacing.md,

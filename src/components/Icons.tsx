@@ -276,6 +276,21 @@ export const SettingsIcon: React.FC<IconProps> = ({ size = 20, color = '#382528'
   );
 };
 
+export const ChevronLeftIcon: React.FC<IconProps> = ({ size = 18, color = '#907B76', style }) => {
+  if (Platform.OS === 'web') {
+    return (
+      <WebSvg size={size} color={color} style={style}>
+        {React.createElement('path', { d: 'm15 18-6-6 6-6' })}
+      </WebSvg>
+    );
+  }
+  return (
+    <View style={[{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }, style]}>
+      <Text style={{ fontSize: size * 0.85, color, lineHeight: size }}>‹</Text>
+    </View>
+  );
+};
+
 export const ChevronRightIcon: React.FC<IconProps> = ({ size = 18, color = '#907B76', style }) => {
   if (Platform.OS === 'web') {
     return (
@@ -335,6 +350,74 @@ export const MoreIcon: React.FC<IconProps> = ({ size = 20, color = '#907B76', st
   return (
     <View style={[{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }, style]}>
       <Text style={{ fontSize: size * 0.85, color, lineHeight: size }}>⋯</Text>
+    </View>
+  );
+};
+
+export const TorchIcon: React.FC<IconProps & { active?: boolean }> = ({
+  size = 20,
+  color = '#382528',
+  active = false,
+  style,
+}) => {
+  if (Platform.OS === 'web') {
+    return (
+      <WebSvg size={size} color={color} style={style}>
+        {React.createElement('path', { d: 'M18 6c0 2-2 4-2 7v6a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-6c0-3-2-5-2-7 0-3 3-4 6-4s6 1 6 4z' })}
+        {active && React.createElement('path', { d: 'M12 2v2M4 4l2 2M20 4l-2 2' })}
+      </WebSvg>
+    );
+  }
+  return (
+    <View style={[{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }, style]}>
+      <Text style={{ fontSize: size * 0.85, color, lineHeight: size }}>{active ? '⚡' : '🔦'}</Text>
+    </View>
+  );
+};
+
+export const HomeIcon: React.FC<IconProps> = ({ size = 20, color = '#382528', style }) => {
+  if (Platform.OS === 'web') {
+    return (
+      <WebSvg size={size} color={color} style={style}>
+        {React.createElement('path', { d: 'm3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z' })}
+        {React.createElement('polyline', { points: '9 22 9 12 15 12 15 22' })}
+      </WebSvg>
+    );
+  }
+  return (
+    <View style={[{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }, style]}>
+      <Text style={{ fontSize: size * 0.85, color, lineHeight: size }}>⌂</Text>
+    </View>
+  );
+};
+
+export const EditIcon: React.FC<IconProps> = ({ size = 18, color = '#382528', style }) => {
+  if (Platform.OS === 'web') {
+    return (
+      <WebSvg size={size} color={color} style={style}>
+        {React.createElement('path', { d: 'M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z' })}
+      </WebSvg>
+    );
+  }
+  return (
+    <View style={[{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }, style]}>
+      <Text style={{ fontSize: size * 0.85, color, lineHeight: size }}>✎</Text>
+    </View>
+  );
+};
+
+export const UserIcon: React.FC<IconProps> = ({ size = 20, color = '#382528', style }) => {
+  if (Platform.OS === 'web') {
+    return (
+      <WebSvg size={size} color={color} style={style}>
+        {React.createElement('path', { d: 'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2' })}
+        {React.createElement('circle', { cx: 12, cy: 7, r: 4 })}
+      </WebSvg>
+    );
+  }
+  return (
+    <View style={[{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }, style]}>
+      <Text style={{ fontSize: size * 0.85, color, lineHeight: size }}>👤</Text>
     </View>
   );
 };

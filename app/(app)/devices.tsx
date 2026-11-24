@@ -11,16 +11,24 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DeviceMetadata, DeviceService } from '../../src/services/deviceService';
 import { useTheme } from '../../src/store/themeStore';
-import { DeviceIcon } from '../../src/components/Icons';
-import { Radius, Spacing, Typography, Shadows } from '../../src/components/tokens';
+import { ConfirmationDialog } from '../../src/components/ConfirmationDialog';
+import { Button } from '../../src/components/Button';
+import {
+  DeviceIcon,
+  ChevronLeftIcon,
+  ShieldIcon,
+  PlusIcon,
+} from '../../src/components/Icons';
+import { Radius, Spacing, Typography, Shadows, Palette } from '../../src/components/tokens';
 
 export default function DevicesScreen() {
   const router = useRouter();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   const [devices, setDevices] = useState<DeviceMetadata[]>([]);
   const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deviceToRevoke, setDeviceToRevoke] = useState<DeviceMetadata | null>(null);
 
   const loadDevices = async () => {
     try {
@@ -42,118 +50,177 @@ export default function DevicesScreen() {
     loadDevices();
   }, []);
 
-  const handleRevokeDevice = (device: DeviceMetadata) => {
-    Alert.alert(
-      'Revoke Device',
-      `Revoke synchronization access for "${device.device_name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Revoke',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await DeviceService.removeDevice(device.id);
-              await loadDevices();
-            } catch (err: any) {
-              Alert.alert('Revocation Failed', err.message);
-            }
-          },
-        },
-      ]
-    );
+  const confirmRevokeDevice = async () => {
+    if (!deviceToRevoke) return;
+    const target = deviceToRevoke;
+    setDeviceToRevoke(null);
+    try {
+      await DeviceService.removeDevice(target.id);
+      await loadDevices();
+    } catch (err: any) {
+      Alert.alert('Revocation Failed', err.message);
+    }
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.contentWrapper}>
-        <View style={styles.header}>
-          <View>
-            <Text style={[styles.title, { color: theme.heading }]}>Enrolled Devices</Text>
-            <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-              Devices enrolled in your zero-knowledge synchronization ring
-            </Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={[styles.closeBtn, { backgroundColor: theme.surface }]}
-          >
-            <Text style={[styles.closeText, { color: theme.textMuted }]}>✕</Text>
-          </TouchableOpacity>
+    <SafeAreaView
+      edges={['top', 'left', 'right']}
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[styles.backBtn, { backgroundColor: theme.surface }]}
+          accessibilityLabel="Back"
+        >
+          <ChevronLeftIcon size={18} color={theme.text} />
+        </TouchableOpacity>
+        <View style={styles.headerTitleWrap}>
+          <Text style={[styles.title, { color: theme.heading }]}>Enrolled Devices</Text>
+          <Text style={[styles.subtitle, { color: theme.textMuted }]}>
+            Devices in your zero-knowledge sync ring
+          </Text>
         </View>
-
-        <FlatList
-          data={devices}
-          keyExtractor={(item) => item.id}
-          refreshing={loading}
-          onRefresh={loadDevices}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => {
-            const isThisDevice = item.id === currentDeviceId;
-            return (
-              <View
-                style={[
-                  styles.deviceCard,
-                  {
-                    backgroundColor: theme.surface,
-                    borderColor: isThisDevice ? theme.primary : theme.border,
-                  },
-                  Shadows.subtle,
-                ]}
-              >
-                <View style={styles.deviceRow}>
-                  <View style={[styles.iconBox, { backgroundColor: theme.surfaceHighlight }]}>
-                    <DeviceIcon size={20} color={theme.primary} />
-                  </View>
-
-                  <View style={styles.deviceInfo}>
-                    <View style={styles.nameRow}>
-                      <Text style={[styles.deviceName, { color: theme.text }]}>
-                        {item.device_name || 'Personal Device'}
-                      </Text>
-                      {isThisDevice && (
-                        <View style={[styles.thisBadge, { backgroundColor: theme.surfaceHighlight }]}>
-                          <Text style={[styles.thisBadgeText, { color: theme.secondaryText }]}>
-                            THIS DEVICE
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={[styles.deviceMeta, { color: theme.textMuted }]}>
-                      Platform: {item.platform.toUpperCase()} • Registered:{' '}
-                      {new Date(item.created_at).toLocaleDateString()}
-                    </Text>
-                    <Text style={[styles.deviceMeta, { color: theme.textDim }]}>
-                      Last Active:{' '}
-                      {item.last_active_at
-                        ? new Date(item.last_active_at).toLocaleString()
-                        : 'Just now'}
-                    </Text>
-                  </View>
-
-                  {!isThisDevice && (
-                    <TouchableOpacity
-                      onPress={() => handleRevokeDevice(item)}
-                      style={[styles.revokeBtn, { backgroundColor: theme.dangerMuted }]}
-                    >
-                      <Text style={[styles.revokeText, { color: theme.danger }]}>Revoke</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            );
-          }}
-          ListEmptyComponent={
-            !loading ? (
-              <View style={styles.empty}>
-                <Text style={[styles.emptyText, { color: theme.textMuted }]}>
-                  No devices registered in sync ring yet.
-                </Text>
-              </View>
-            ) : undefined
-          }
-        />
+        <View style={styles.headerSpacer} />
       </View>
+
+      <FlatList
+        data={devices}
+        keyExtractor={(item) => item.id}
+        refreshing={loading}
+        onRefresh={loadDevices}
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => {
+          const isThisDevice = item.id === currentDeviceId;
+          return (
+            <View
+              style={[
+                styles.deviceCard,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: isThisDevice ? Palette.primaryBurgundy : theme.border,
+                },
+                Shadows.subtle,
+              ]}
+            >
+              <View style={styles.deviceRow}>
+                <View
+                  style={[
+                    styles.iconBox,
+                    {
+                      backgroundColor: isThisDevice
+                        ? Palette.primaryBurgundy
+                        : theme.backgroundSecondary,
+                    },
+                  ]}
+                >
+                  <DeviceIcon
+                    size={20}
+                    color={isThisDevice ? Palette.lightBeige : theme.heading}
+                  />
+                </View>
+
+                <View style={styles.deviceInfo}>
+                  <View style={styles.nameRow}>
+                    <Text style={[styles.deviceName, { color: theme.text }]} numberOfLines={1}>
+                      {item.device_name || 'Mobile Device'}
+                    </Text>
+                    {isThisDevice && (
+                      <View
+                        style={[
+                          styles.thisBadge,
+                          {
+                            backgroundColor: isDark
+                              ? 'rgba(254, 215, 184, 0.15)'
+                              : 'rgba(89, 23, 27, 0.08)',
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.thisBadgeText,
+                            {
+                              color: isDark ? Palette.lightBeige : Palette.primaryBurgundy,
+                            },
+                          ]}
+                        >
+                          THIS DEVICE
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <Text style={[styles.deviceMeta, { color: theme.textMuted }]}>
+                    Platform: {item.platform.toUpperCase()} • Enrolled:{' '}
+                    {new Date(item.created_at).toLocaleDateString()}
+                  </Text>
+                  <Text style={[styles.deviceMeta, { color: theme.textDim }]}>
+                    Last Active:{' '}
+                    {item.last_active_at
+                      ? new Date(item.last_active_at).toLocaleString([], {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : 'Just now'}
+                  </Text>
+                </View>
+
+                {!isThisDevice && (
+                  <TouchableOpacity
+                    onPress={() => setDeviceToRevoke(item)}
+                    style={[styles.revokeBtn, { backgroundColor: theme.dangerMuted }]}
+                  >
+                    <Text style={[styles.revokeText, { color: theme.danger }]}>Revoke</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          );
+        }}
+        ListEmptyComponent={
+          !loading ? (
+            <View style={styles.empty}>
+              <View
+                style={[styles.emptyIconBox, { backgroundColor: theme.backgroundSecondary }]}
+              >
+                <ShieldIcon size={32} color={theme.textMuted} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: theme.heading }]}>
+                No External Devices
+              </Text>
+              <Text style={[styles.emptyText, { color: theme.textMuted }]}>
+                Only this device is currently enrolled in your cryptographic ring.
+              </Text>
+            </View>
+          ) : undefined
+        }
+        ListFooterComponent={
+          <View style={styles.footerWrap}>
+            <Button
+              title="Enroll Another Device"
+              variant="secondary"
+              size="lg"
+              onPress={() => router.push('/(app)/enrollment')}
+              icon={<PlusIcon size={18} color={Palette.darkBurgundy} />}
+              style={styles.enrollBtn}
+            />
+          </View>
+        }
+      />
+
+      {/* Confirmation Dialog for Revocation */}
+      <ConfirmationDialog
+        visible={!!deviceToRevoke}
+        title="Revoke Device Access?"
+        message={`Are you sure you want to decouple "${deviceToRevoke?.device_name || 'this device'}" from your synchronization ring? It will lose access to vault updates.`}
+        confirmLabel="Revoke Access"
+        isDestructive
+        onConfirm={confirmRevokeDevice}
+        onCancel={() => setDeviceToRevoke(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -162,41 +229,40 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  contentWrapper: {
-    flex: 1,
-    padding: Spacing.lg,
-    maxWidth: 600,
-    width: '100%',
-    alignSelf: 'center',
-  },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.md,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
-  },
-  subtitle: {
-    fontSize: 13,
-    marginTop: 2,
-    fontFamily: Typography.fontFamilyBody,
-  },
-  closeBtn: {
+  backBtn: {
     width: 36,
     height: 36,
     borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: Spacing.sm,
   },
-  closeText: {
-    fontSize: 16,
-    fontWeight: '700',
+  headerTitleWrap: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontSize: 12,
+    fontFamily: Typography.fontFamilyBody,
+    marginTop: 1,
+  },
+  headerSpacer: {
+    width: 36,
   },
   list: {
+    paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xxl,
   },
   deviceCard: {
@@ -210,8 +276,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   iconBox: {
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     borderRadius: Radius.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -232,9 +298,9 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamilyHeading,
   },
   thisBadge: {
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: Radius.sm,
+    borderRadius: Radius.full,
   },
   thisBadgeText: {
     fontSize: 9,
@@ -242,12 +308,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   deviceMeta: {
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 2,
     fontFamily: Typography.fontFamilyBody,
   },
   revokeBtn: {
-    paddingHorizontal: Spacing.sm,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: Radius.sm,
   },
@@ -258,9 +324,32 @@ const styles = StyleSheet.create({
   empty: {
     alignItems: 'center',
     paddingTop: 48,
+    paddingHorizontal: Spacing.lg,
+  },
+  emptyIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
+    marginBottom: Spacing.xs,
   },
   emptyText: {
-    fontSize: 14,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 19,
     fontFamily: Typography.fontFamilyBody,
+  },
+  footerWrap: {
+    marginTop: Spacing.md,
+  },
+  enrollBtn: {
+    width: '100%',
   },
 });

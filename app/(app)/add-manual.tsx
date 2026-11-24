@@ -6,15 +6,20 @@ import {
   ScrollView,
   Alert,
   TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Input } from '../../src/components/Input';
 import { Button } from '../../src/components/Button';
+import { ChevronLeftIcon, KeyIcon, CheckIcon } from '../../src/components/Icons';
 import { useTheme } from '../../src/store/themeStore';
 import { isValidBase32, sanitizeBase32, HashAlgorithm } from '../../src/core/totp';
 import { useVaultStore } from '../../src/store/vaultStore';
-import { Radius, Spacing, Typography, Shadows } from '../../src/components/tokens';
+import { Radius, Spacing, Typography, Shadows, Palette } from '../../src/components/tokens';
+
+const POPULAR_ISSUERS = ['Google', 'GitHub', 'Microsoft', 'AWS', 'Discord', 'Slack'];
 
 export default function AddManualScreen() {
   const router = useRouter();
@@ -30,17 +35,32 @@ export default function AddManualScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const sanitizedSecret = sanitizeBase32(secret);
+  const isSecretValid = secret.length > 0 && isValidBase32(sanitizedSecret);
+
+  const handleSelectIssuer = (name: string) => {
+    setIssuer(name);
+    if (errorMsg) setErrorMsg(null);
+  };
+
   const handleSave = async () => {
     setErrorMsg(null);
 
-    if (!issuer.trim() || !accountName.trim() || !secret.trim()) {
-      setErrorMsg('Issuer, account name, and secret key are all required.');
+    if (!issuer.trim()) {
+      setErrorMsg('Please enter a service or issuer name.');
+      return;
+    }
+    if (!accountName.trim()) {
+      setErrorMsg('Please enter an account identifier or email.');
+      return;
+    }
+    if (!secret.trim()) {
+      setErrorMsg('Please provide a secret key.');
       return;
     }
 
-    const sanitizedSecret = sanitizeBase32(secret);
-    if (!isValidBase32(sanitizedSecret)) {
-      setErrorMsg('The secret must be a valid Base32 key (A-Z and digits 2-7).');
+    if (!isSecretValid) {
+      setErrorMsg('The secret key contains invalid characters. Base32 only accepts A-Z and digits 2-7.');
       return;
     }
 
@@ -55,7 +75,7 @@ export default function AddManualScreen() {
         period,
       });
 
-      Alert.alert('Account Encrypted', `Successfully registered ${issuer.trim()}.`, [
+      Alert.alert('Account Encrypted', `Successfully secured ${issuer.trim()} in your local vault.`, [
         { text: 'View Codes', onPress: () => router.replace('/(app)') },
       ]);
     } catch (err: any) {
@@ -66,27 +86,39 @@ export default function AddManualScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.contentWrapper}>
+    <SafeAreaView
+      edges={['top', 'left', 'right']}
+      style={[styles.container, { backgroundColor: theme.background }]}
+    >
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         {/* Header */}
         <View style={styles.header}>
-          <View>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={[styles.backBtn, { backgroundColor: theme.surface }]}
+            accessibilityLabel="Back"
+          >
+            <ChevronLeftIcon size={18} color={theme.text} />
+          </TouchableOpacity>
+          <View style={styles.headerTitleWrap}>
             <Text style={[styles.title, { color: theme.heading }]}>
-              Manual Account Setup
+              Manual Setup
             </Text>
             <Text style={[styles.subtitle, { color: theme.textMuted }]}>
               Configure cryptographic TOTP parameters manually
             </Text>
           </View>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={[styles.closeBtn, { backgroundColor: theme.surface }]}
-          >
-            <Text style={[styles.closeText, { color: theme.textMuted }]}>✕</Text>
-          </TouchableOpacity>
+          <View style={styles.headerSpacer} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.formScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.formScroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {errorMsg && (
             <View
               style={[
@@ -105,6 +137,46 @@ export default function AddManualScreen() {
               Shadows.card,
             ]}
           >
+            {/* Quick Provider Chips */}
+            <Text style={[styles.sectionSubtitle, { color: theme.textMuted }]}>
+              QUICK SERVICE SELECTION
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipsScroll}
+            >
+              {POPULAR_ISSUERS.map((name) => {
+                const isSelected = issuer.toLowerCase() === name.toLowerCase();
+                return (
+                  <TouchableOpacity
+                    key={name}
+                    onPress={() => handleSelectIssuer(name)}
+                    style={[
+                      styles.chip,
+                      {
+                        backgroundColor: isSelected
+                          ? Palette.primaryBurgundy
+                          : theme.backgroundSecondary,
+                        borderColor: isSelected ? Palette.primaryBurgundy : theme.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        {
+                          color: isSelected ? Palette.white : theme.text,
+                        },
+                      ]}
+                    >
+                      {name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
             {/* Account Details */}
             <Input
               label="Service / Issuer"
@@ -125,112 +197,143 @@ export default function AddManualScreen() {
                 if (errorMsg) setErrorMsg(null);
               }}
               autoCapitalize="none"
+              keyboardType="email-address"
             />
 
-            <Input
-              label="Secret Key (Base32)"
-              placeholder="e.g. JBSWY3DPEHPK3PXP"
-              value={secret}
-              onChangeText={(t) => {
-                setSecret(t);
-                if (errorMsg) setErrorMsg(null);
-              }}
-              autoCapitalize="characters"
-              autoCorrect={false}
-            />
+            <View style={styles.secretWrap}>
+              <Input
+                label="Secret Key (Base32)"
+                placeholder="e.g. JBSWY3DPEHPK3PXP"
+                value={secret}
+                onChangeText={(t) => {
+                  setSecret(t);
+                  if (errorMsg) setErrorMsg(null);
+                }}
+                autoCapitalize="characters"
+                autoCorrect={false}
+              />
+              {secret.length > 0 && (
+                <View style={styles.secretValidationRow}>
+                  {isSecretValid ? (
+                    <View style={styles.validRow}>
+                      <CheckIcon size={14} color={theme.success} />
+                      <Text style={[styles.validationText, { color: theme.success }]}>
+                        Valid Base32 Secret ({sanitizedSecret.length} chars)
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={[styles.validationText, { color: theme.danger }]}>
+                      Invalid characters (only A-Z and digits 2-7)
+                    </Text>
+                  )}
+                </View>
+              )}
+            </View>
 
             {/* Cryptographic Selectors */}
             <Text style={[styles.selectorLabel, { color: theme.textMuted }]}>
               HASH ALGORITHM
             </Text>
             <View style={styles.selectorRow}>
-              {(['SHA1', 'SHA256', 'SHA512'] as HashAlgorithm[]).map((algo) => (
-                <TouchableOpacity
-                  key={algo}
-                  onPress={() => setAlgorithm(algo)}
-                  style={[
-                    styles.selectorBtn,
-                    {
-                      backgroundColor:
-                        algorithm === algo ? theme.primary : theme.backgroundSecondary,
-                      borderColor: algorithm === algo ? theme.primary : theme.border,
-                    },
-                  ]}
-                >
-                  <Text
+              {(['SHA1', 'SHA256', 'SHA512'] as HashAlgorithm[]).map((algo) => {
+                const isSelected = algorithm === algo;
+                return (
+                  <TouchableOpacity
+                    key={algo}
+                    onPress={() => setAlgorithm(algo)}
                     style={[
-                      styles.selectorText,
+                      styles.selectorBtn,
                       {
-                        color: algorithm === algo ? theme.primaryText : theme.text,
+                        backgroundColor: isSelected
+                          ? Palette.primaryBurgundy
+                          : theme.backgroundSecondary,
+                        borderColor: isSelected ? Palette.primaryBurgundy : theme.border,
                       },
                     ]}
                   >
-                    {algo}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        styles.selectorText,
+                        {
+                          color: isSelected ? Palette.white : theme.text,
+                        },
+                      ]}
+                    >
+                      {algo}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             <Text style={[styles.selectorLabel, { color: theme.textMuted }]}>
               NUMBER OF DIGITS
             </Text>
             <View style={styles.selectorRow}>
-              {[6, 8].map((num) => (
-                <TouchableOpacity
-                  key={num}
-                  onPress={() => setDigits(num)}
-                  style={[
-                    styles.selectorBtn,
-                    {
-                      backgroundColor:
-                        digits === num ? theme.primary : theme.backgroundSecondary,
-                      borderColor: digits === num ? theme.primary : theme.border,
-                    },
-                  ]}
-                >
-                  <Text
+              {[6, 8].map((num) => {
+                const isSelected = digits === num;
+                return (
+                  <TouchableOpacity
+                    key={num}
+                    onPress={() => setDigits(num)}
                     style={[
-                      styles.selectorText,
+                      styles.selectorBtn,
                       {
-                        color: digits === num ? theme.primaryText : theme.text,
+                        backgroundColor: isSelected
+                          ? Palette.primaryBurgundy
+                          : theme.backgroundSecondary,
+                        borderColor: isSelected ? Palette.primaryBurgundy : theme.border,
                       },
                     ]}
                   >
-                    {num} Digits
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        styles.selectorText,
+                        {
+                          color: isSelected ? Palette.white : theme.text,
+                        },
+                      ]}
+                    >
+                      {num} Digits {num === 6 ? '(Standard)' : ''}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             <Text style={[styles.selectorLabel, { color: theme.textMuted }]}>
-              TIME INTERVAL
+              REFRESH INTERVAL
             </Text>
             <View style={styles.selectorRow}>
-              {[30, 60].map((sec) => (
-                <TouchableOpacity
-                  key={sec}
-                  onPress={() => setPeriod(sec)}
-                  style={[
-                    styles.selectorBtn,
-                    {
-                      backgroundColor:
-                        period === sec ? theme.primary : theme.backgroundSecondary,
-                      borderColor: period === sec ? theme.primary : theme.border,
-                    },
-                  ]}
-                >
-                  <Text
+              {[30, 60].map((sec) => {
+                const isSelected = period === sec;
+                return (
+                  <TouchableOpacity
+                    key={sec}
+                    onPress={() => setPeriod(sec)}
                     style={[
-                      styles.selectorText,
+                      styles.selectorBtn,
                       {
-                        color: period === sec ? theme.primaryText : theme.text,
+                        backgroundColor: isSelected
+                          ? Palette.primaryBurgundy
+                          : theme.backgroundSecondary,
+                        borderColor: isSelected ? Palette.primaryBurgundy : theme.border,
                       },
                     ]}
                   >
-                    {sec} Seconds
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        styles.selectorText,
+                        {
+                          color: isSelected ? Palette.white : theme.text,
+                        },
+                      ]}
+                    >
+                      {sec} Seconds {sec === 30 ? '(Standard)' : ''}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             {/* Action Buttons */}
@@ -240,6 +343,7 @@ export default function AddManualScreen() {
                 size="lg"
                 onPress={handleSave}
                 loading={loading}
+                icon={<KeyIcon size={18} color={Palette.white} />}
                 style={styles.saveBtn}
               />
               <Button
@@ -252,7 +356,7 @@ export default function AddManualScreen() {
             </View>
           </View>
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -261,47 +365,70 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  contentWrapper: {
+  keyboardAvoid: {
     flex: 1,
-    padding: Spacing.lg,
-    maxWidth: 580,
-    width: '100%',
-    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.md,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
-  },
-  subtitle: {
-    fontSize: 13,
-    marginTop: 2,
-    fontFamily: Typography.fontFamilyBody,
-  },
-  closeBtn: {
+  backBtn: {
     width: 36,
     height: 36,
     borderRadius: Radius.full,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: Spacing.sm,
   },
-  closeText: {
-    fontSize: 16,
-    fontWeight: '700',
+  headerTitleWrap: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '800',
+    fontFamily: Typography.fontFamilyHeading,
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontSize: 12,
+    fontFamily: Typography.fontFamilyBody,
+    marginTop: 1,
+  },
+  headerSpacer: {
+    width: 36,
   },
   formScroll: {
+    paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xxl,
   },
   card: {
     borderRadius: Radius.xl,
-    padding: Spacing.xl,
+    padding: Spacing.lg,
     borderWidth: 1,
+  },
+  sectionSubtitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: Spacing.xs,
+  },
+  chipsScroll: {
+    gap: Spacing.xs,
+    paddingBottom: Spacing.md,
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: Typography.fontFamilyBody,
   },
   errorBox: {
     padding: Spacing.md,
@@ -311,6 +438,24 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 13,
+    fontWeight: '600',
+    fontFamily: Typography.fontFamilyBody,
+  },
+  secretWrap: {
+    marginBottom: Spacing.xs,
+  },
+  secretValidationRow: {
+    marginTop: -Spacing.xs,
+    marginBottom: Spacing.sm,
+    paddingHorizontal: 4,
+  },
+  validRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  validationText: {
+    fontSize: 11,
     fontWeight: '600',
     fontFamily: Typography.fontFamilyBody,
   },
@@ -335,7 +480,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectorText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     fontFamily: Typography.fontFamilyBody,
   },

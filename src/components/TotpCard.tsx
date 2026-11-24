@@ -13,9 +13,10 @@ interface TotpCardProps {
   account: DecryptedAccountRecord;
   onCopy?: (code: string) => void;
   onDelete?: (id: string) => void;
+  onUpdate?: (id: string, updates: { issuer: string; account_name: string }) => void;
 }
 
-export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete }) => {
+export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete, onUpdate }) => {
   const { theme } = useTheme();
   const [copied, setCopied] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -94,7 +95,11 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
       >
         {/* Top Service Header */}
         <View style={styles.topRow}>
-          <View style={styles.serviceMeta}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setShowDetails(true)}
+            style={styles.serviceMeta}
+          >
             <BrandIcon issuer={account.issuer} size={42} />
             <View style={styles.textMeta}>
               <Text style={[styles.issuerText, { color: theme.heading }]} numberOfLines={1}>
@@ -104,7 +109,7 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
                 {account.account_name}
               </Text>
             </View>
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.topRightActions}>
             <CountdownCircle
@@ -124,7 +129,7 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
           </View>
         </View>
 
-        {/* OTP Code Display Box */}
+        {/* OTP Code Display Box (Tap to Copy) */}
         <TouchableOpacity
           activeOpacity={0.75}
           onPress={handleCopyClick}
@@ -176,7 +181,7 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
         </TouchableOpacity>
       </View>
 
-      {/* Account Details & Specifications Modal */}
+      {/* Account Details, Edit & Specifications Modal */}
       <AccountDetailsModal
         visible={showDetails}
         account={account}
@@ -185,6 +190,7 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
         onClose={() => setShowDetails(false)}
         onCopy={handleCopyClick}
         onDelete={onDelete || (() => {})}
+        onUpdate={onUpdate}
       />
     </>
   );
@@ -215,7 +221,7 @@ const styles = StyleSheet.create({
   },
   issuerText: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     fontFamily: Typography.fontFamilyHeading,
   },
   accountText: {

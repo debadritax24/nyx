@@ -1,10 +1,10 @@
 import { create } from 'zustand';
-import { Platform } from 'react-native';
+import { Platform, Appearance } from 'react-native';
 import { lightTheme, darkTheme, ThemeColors } from '../components/tokens';
 
-export type ThemeMode = 'light' | 'dark';
+export type ThemeMode = 'light' | 'dark' | 'system';
 
-const THEME_STORAGE_KEY = 'nyx_theme_mode_v1';
+const THEME_STORAGE_KEY = 'nyx_theme_mode_v2';
 
 interface ThemeState {
   mode: ThemeMode;
@@ -15,11 +15,19 @@ interface ThemeState {
   initTheme: () => Promise<void>;
 }
 
+const resolveIsDark = (mode: ThemeMode): boolean => {
+  if (mode === 'system') {
+    const sys = Appearance.getColorScheme();
+    return sys === 'dark';
+  }
+  return mode === 'dark';
+};
+
 const getStoredThemeSync = (): ThemeMode => {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     try {
       const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-      if (stored === 'dark' || stored === 'light') return stored;
+      if (stored === 'dark' || stored === 'light' || stored === 'system') return stored as ThemeMode;
     } catch {}
   }
   return 'light'; // Default to light warm cream per brand specification
@@ -31,22 +39,24 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   isDark: false,
 
   toggleTheme: () => {
-    const nextMode: ThemeMode = get().mode === 'light' ? 'dark' : 'light';
+    const currentIsDark = get().isDark;
+    const nextMode: ThemeMode = currentIsDark ? 'light' : 'dark';
     get().setTheme(nextMode);
   },
 
   setTheme: (mode: ThemeMode) => {
-    const nextTheme = mode === 'dark' ? darkTheme : lightTheme;
+    const isDark = resolveIsDark(mode);
+    const nextTheme = isDark ? darkTheme : lightTheme;
     set({
       mode,
       theme: nextTheme,
-      isDark: mode === 'dark',
+      isDark,
     });
 
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       try {
         window.localStorage.setItem(THEME_STORAGE_KEY, mode);
-        if (mode === 'dark') {
+        if (isDark) {
           document.documentElement.classList.add('dark');
         } else {
           document.documentElement.classList.remove('dark');
@@ -66,12 +76,23 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       try {
         const SecureStore = require('expo-secure-store');
         const stored = await SecureStore.getItemAsync(THEME_STORAGE_KEY);
-        if (stored === 'dark' || stored === 'light') {
+        if (stored === 'dark' || stored === 'light' || stored === 'system') {
           mode = stored;
         }
       } catch {}
     }
     get().setTheme(mode);
+
+    // Listen for system appearance changes
+    Appearance.addChangeListener((preferences) => {
+      if (get().mode === 'system') {
+        const isDark = preferences.colorScheme === 'dark';
+        set({
+          theme: isDark ? darkTheme : lightTheme,
+          isDark,
+        });
+      }
+    });
   },
 }));
 

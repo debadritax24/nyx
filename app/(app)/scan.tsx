@@ -15,7 +15,7 @@ import { useVaultStore } from '../../src/store/vaultStore';
 import { useTheme } from '../../src/store/themeStore';
 import { Button } from '../../src/components/Button';
 import { Input } from '../../src/components/Input';
-import { QrCodeIcon, UploadIcon, KeyIcon } from '../../src/components/Icons';
+import { QrCodeIcon, UploadIcon, KeyIcon, TorchIcon } from '../../src/components/Icons';
 import { Radius, Spacing, Typography, Shadows, Palette } from '../../src/components/tokens';
 
 type AddMode = 'camera' | 'upload';
@@ -28,6 +28,7 @@ export default function ScanScreen() {
   const [activeTab, setActiveTab] = useState<AddMode>('camera');
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  const [torch, setTorch] = useState(false);
   const [uriInput, setUriInput] = useState('');
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -81,12 +82,12 @@ export default function ScanScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Top Header */}
+      {/* Top Mobile Header */}
       <View style={styles.header}>
         <View>
           <Text style={[styles.title, { color: theme.heading }]}>Add Account</Text>
           <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-            Secure your credentials with client-side encryption
+            Scan 2FA QR code or upload setup payload
           </Text>
         </View>
         <TouchableOpacity
@@ -98,7 +99,7 @@ export default function ScanScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 3 Tab Mode Switcher (Section 9) */}
+      {/* 3 Tab Mode Switcher (Section 10) */}
       <View style={[styles.tabBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         <TouchableOpacity
           onPress={() => setActiveTab('camera')}
@@ -181,11 +182,13 @@ export default function ScanScreen() {
               </Text>
               <Button
                 title="Grant Camera Permission"
+                size="lg"
                 onPress={requestPermission}
                 style={styles.permBtn}
               />
               <Button
                 title="Enter Details Manually"
+                size="lg"
                 variant="secondary"
                 onPress={() => router.replace('/(app)/add-manual')}
               />
@@ -195,13 +198,27 @@ export default function ScanScreen() {
               <CameraView
                 style={StyleSheet.absoluteFill}
                 facing="back"
+                enableTorch={torch}
                 barcodeScannerSettings={{
                   barcodeTypes: ['qr'],
                 }}
                 onBarcodeScanned={scanned ? undefined : ({ data }) => handleBarcodeScanned(data)}
               />
 
-              {/* Viewfinder Frame with Burgundy Accents */}
+              {/* Torch / Flashlight Toggle Button */}
+              <TouchableOpacity
+                onPress={() => setTorch(!torch)}
+                style={[
+                  styles.torchBtn,
+                  { backgroundColor: torch ? Palette.lightBeige : 'rgba(0,0,0,0.6)' },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Toggle flashlight"
+              >
+                <TorchIcon size={20} color={torch ? Palette.primaryBurgundy : '#FFFFFF'} active={torch} />
+              </TouchableOpacity>
+
+              {/* Viewfinder Frame with Burgundy / Beige Accents */}
               <View style={styles.overlayFrame}>
                 <View style={[styles.targetCornerTL, { borderColor: Palette.lightBeige }]} />
                 <View style={[styles.targetCornerTR, { borderColor: Palette.lightBeige }]} />
@@ -264,7 +281,7 @@ export default function ScanScreen() {
               title="Parse & Encrypt Account"
               size="lg"
               onPress={handleUploadSubmit}
-              style={{ marginTop: Spacing.md }}
+              style={{ marginTop: Spacing.md, width: '100%' }}
             />
           </View>
         </ScrollView>
@@ -341,6 +358,17 @@ const styles = StyleSheet.create({
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  torchBtn: {
+    position: 'absolute',
+    top: Spacing.md,
+    right: Spacing.md,
+    width: 44,
+    height: 44,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
   },
   overlayFrame: {
     width: 250,
