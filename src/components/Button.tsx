@@ -153,7 +153,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
   },
   text: {
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     fontWeight: '600',
     letterSpacing: 0.3,
   },

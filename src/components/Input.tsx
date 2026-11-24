@@ -71,7 +71,7 @@ export const Input: React.FC<InputProps> = ({
             styles.input,
             {
               color: theme.text,
-              fontFamily: Typography.fontFamilyBody,
+              fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
             },
             style,
           ]}
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: '600',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     letterSpacing: 0.2,
   },
   inputWrapper: {
@@ -146,11 +146,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     fontWeight: '500',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   hintText: {
     fontSize: 12,
     marginTop: 4,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
 });

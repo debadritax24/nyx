@@ -115,7 +115,9 @@ export const BrandIcon: React.FC<BrandIconProps> = ({ issuer = '', size = 44 }) 
           {
             color: brand.color,
             fontSize: size * 0.48,
-            fontFamily: brand.isSerif ? Typography.fontFamilyHeading : Typography.fontFamilyBody,
+            fontFamily: brand.isSerif
+              ? (Typography?.fontFamilyHeading ?? 'serif')
+              : (Typography?.fontFamilyBody ?? 'sans-serif'),
           },
         ]}
       >

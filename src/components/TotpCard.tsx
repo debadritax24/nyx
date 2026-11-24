@@ -145,7 +145,7 @@ export const TotpCard: React.FC<TotpCardProps> = ({ account, onCopy, onDelete })
                 styles.codeText,
                 {
                   color: isUrgent ? theme.danger : theme.primary,
-                  fontFamily: Typography.fontFamilyMono,
+                  fontFamily: Typography?.fontFamilyMono ?? 'monospace',
                 },
               ]}
             >
@@ -216,12 +216,12 @@ const styles = StyleSheet.create({
   issuerText: {
     fontSize: 16,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   accountText: {
     fontSize: 13,
     marginTop: 2,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   topRightActions: {
     flexDirection: 'row',
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
   copyBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     letterSpacing: 0.5,
   },
 });

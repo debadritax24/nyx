@@ -292,12 +292,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   subtitle: {
     fontSize: 13,
     marginTop: 2,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   closeBtn: {
     width: 36,
@@ -335,24 +335,24 @@ const styles = StyleSheet.create({
   themeLabel: {
     fontSize: 15,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   themeSublabel: {
     fontSize: 12,
     marginTop: 2,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     maxWidth: 280,
   },
   label: {
     fontSize: 12,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   value: {
     fontSize: 15,
     fontWeight: '600',
     marginTop: 2,
     marginBottom: Spacing.xs,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   divider: {
     height: 1,
@@ -379,12 +379,12 @@ const styles = StyleSheet.create({
   switchLabel: {
     fontSize: 15,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   switchSublabel: {
     fontSize: 12,
     marginTop: 2,
     lineHeight: 18,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
 });

@@ -323,12 +323,12 @@ const styles = StyleSheet.create({
     color: '#FFF8F2',
     fontSize: 20,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   brandTitle: {
     fontSize: 20,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     letterSpacing: 1.5,
   },
   brandSubtitle: {
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
   showcaseHeading: {
     fontSize: 42,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     lineHeight: 48,
     marginBottom: Spacing.md,
     letterSpacing: -0.5,
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
   showcaseSubtitle: {
     fontSize: 16,
     lineHeight: 25,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     marginBottom: Spacing.xl,
   },
   graphicCard: {
@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
   graphicTitle: {
     fontSize: 15,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   graphicItem: {
     flexDirection: 'row',
@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
   },
   graphicItemText: {
     fontSize: 13,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   showcaseFooter: {
     paddingTop: Spacing.md,
@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
   showcaseQuote: {
     fontSize: 14,
     fontStyle: 'italic',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   formColumn: {
     flex: 1,
@@ -433,12 +433,12 @@ const styles = StyleSheet.create({
     color: '#FFF8F2',
     fontSize: 17,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   mobileBrandText: {
     fontSize: 18,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     letterSpacing: 1.5,
   },
   formHeader: {
@@ -447,13 +447,13 @@ const styles = StyleSheet.create({
   formTitle: {
     fontSize: 32,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     letterSpacing: -0.5,
   },
   formSubtitle: {
     fontSize: 15,
     marginTop: 6,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     lineHeight: 22,
   },
   errorBanner: {
@@ -465,7 +465,7 @@ const styles = StyleSheet.create({
   errorBannerText: {
     fontSize: 13,
     fontWeight: '600',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   fieldsContainer: {
     marginBottom: Spacing.lg,
@@ -480,11 +480,11 @@ const styles = StyleSheet.create({
   },
   authFooterText: {
     fontSize: 14,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   authFooterLink: {
     fontSize: 14,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
 });

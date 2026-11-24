@@ -178,12 +178,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   subtitle: {
     fontSize: 13,
     marginTop: 2,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   closeBtn: {
     width: 36,
@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
   deviceName: {
     fontSize: 15,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   thisBadge: {
     paddingHorizontal: 6,
@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
   deviceMeta: {
     fontSize: 12,
     marginTop: 2,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   revokeBtn: {
     paddingHorizontal: Spacing.sm,
@@ -261,6 +261,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
 });

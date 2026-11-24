@@ -203,12 +203,12 @@ const styles = StyleSheet.create({
   issuer: {
     fontSize: 20,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   accountName: {
     fontSize: 14,
     marginTop: 2,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   closeBtn: {
     width: 32,
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
   codeText: {
     fontSize: 30,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyMono,
+    fontFamily: Typography?.fontFamilyMono ?? 'monospace',
     fontVariant: ['tabular-nums'],
     letterSpacing: 2,
   },
@@ -278,12 +278,12 @@ const styles = StyleSheet.create({
   },
   metaLabel: {
     fontSize: 13,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   metaValue: {
     fontSize: 13,
     fontWeight: '600',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   actions: {
     flexDirection: 'row',

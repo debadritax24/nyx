@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
   backLink: {
     fontSize: 14,
     fontWeight: '600',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   card: {
     borderRadius: Radius.xl,
@@ -126,13 +126,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
     lineHeight: 21,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     marginBottom: Spacing.xl,
   },
   form: {
@@ -149,12 +149,12 @@ const styles = StyleSheet.create({
   sentTitle: {
     fontSize: 16,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   sentDesc: {
     fontSize: 13,
     lineHeight: 20,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   returnBtn: {
     marginTop: Spacing.sm,

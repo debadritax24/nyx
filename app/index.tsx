@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
   loadingLogo: {
     fontSize: 42,
     fontWeight: '900',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     letterSpacing: 4,
   },
   scrollContent: {
@@ -333,12 +333,12 @@ const styles = StyleSheet.create({
     color: '#FFF8F2',
     fontSize: 20,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   brandTitle: {
     fontSize: 20,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     letterSpacing: 1.5,
   },
   brandTagline: {
@@ -360,7 +360,7 @@ const styles = StyleSheet.create({
   navSignInText: {
     fontSize: 14,
     fontWeight: '600',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   heroContainer: {
     paddingVertical: Spacing.lg,
@@ -388,13 +388,13 @@ const styles = StyleSheet.create({
   pillBadgeText: {
     fontSize: 11,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     letterSpacing: 0.8,
   },
   heroHeadline: {
     fontSize: 38,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     lineHeight: 46,
     marginBottom: Spacing.md,
     letterSpacing: -0.5,
@@ -402,7 +402,7 @@ const styles = StyleSheet.create({
   heroSubheadline: {
     fontSize: 17,
     lineHeight: 26,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     marginBottom: Spacing.xl,
   },
   heroCtaGroup: {
@@ -430,7 +430,7 @@ const styles = StyleSheet.create({
   assuranceText: {
     fontSize: 13,
     fontWeight: '500',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   heroVisualCol: {
     flex: 1,
@@ -472,11 +472,11 @@ const styles = StyleSheet.create({
   mockupService: {
     fontSize: 17,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   mockupAccount: {
     fontSize: 13,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   mockupCodeBox: {
     borderRadius: Radius.md,
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   mockupCode: {
     fontSize: 32,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyMono,
+    fontFamily: Typography?.fontFamilyMono ?? 'monospace',
     fontVariant: ['tabular-nums'],
     letterSpacing: 3,
   },
@@ -561,13 +561,13 @@ const styles = StyleSheet.create({
   featureTitle: {
     fontSize: 18,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     marginBottom: Spacing.xs,
   },
   featureDesc: {
     fontSize: 14,
     lineHeight: 22,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   footer: {
     borderTopWidth: 1,
@@ -578,7 +578,7 @@ const styles = StyleSheet.create({
   footerTagline: {
     fontSize: 15,
     fontStyle: 'italic',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   footerCopy: {
     fontSize: 12,

@@ -41,7 +41,7 @@ export const CountdownCircle: React.FC<CountdownCircleProps> = ({
           styles.text,
           {
             color: strokeColor,
-            fontFamily: Typography.fontFamilyMono,
+            fontFamily: Typography?.fontFamilyMono ?? 'monospace',
             fontSize: size * 0.36,
           },
         ]}

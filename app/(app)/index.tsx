@@ -509,14 +509,14 @@ const styles = StyleSheet.create({
   lockedTitle: {
     fontSize: 24,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     marginBottom: Spacing.xs,
     textAlign: 'center',
   },
   lockedSubtitle: {
     fontSize: 14,
     lineHeight: 21,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     textAlign: 'center',
     marginBottom: Spacing.xl,
   },
@@ -544,13 +544,13 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 22,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     marginBottom: 6,
   },
   modalSubtitle: {
     fontSize: 13,
     lineHeight: 19,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     marginBottom: Spacing.lg,
   },
   modalBtn: {
@@ -567,7 +567,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
     fontWeight: '600',
-    fontFamily: Typography.fontFamilyMono,
+    fontFamily: Typography?.fontFamilyMono ?? 'monospace',
   },
   feedbackToast: {
     position: 'absolute',
@@ -583,7 +583,7 @@ const styles = StyleSheet.create({
     color: '#FFF8F2',
     fontWeight: '700',
     fontSize: 13,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   header: {
     flexDirection: 'row',
@@ -610,12 +610,12 @@ const styles = StyleSheet.create({
     color: '#FFF8F2',
     fontSize: 20,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   brandTitle: {
     fontSize: 20,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     letterSpacing: 1.5,
   },
   userStatusRow: {
@@ -626,7 +626,7 @@ const styles = StyleSheet.create({
   },
   userBadge: {
     fontSize: 12,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     maxWidth: 180,
   },
   syncPill: {
@@ -666,13 +666,13 @@ const styles = StyleSheet.create({
   pageHeading: {
     fontSize: 28,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     letterSpacing: -0.5,
   },
   pageSubtitle: {
     fontSize: 14,
     marginTop: 4,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   searchAndActionsRow: {
     marginTop: Spacing.md,
@@ -717,7 +717,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 22,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     marginBottom: 6,
   },
   emptySubtitle: {
@@ -725,7 +725,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlign: 'center',
     maxWidth: 380,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     marginBottom: Spacing.xl,
   },
   emptyActionsRow: {
