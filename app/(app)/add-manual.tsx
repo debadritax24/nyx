@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 13,
     fontWeight: '600',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   secretWrap: {
     marginBottom: Spacing.xs,
@@ -482,7 +482,7 @@ const styles = StyleSheet.create({
   selectorText: {
     fontSize: 12,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   actionsRow: {
     marginTop: Spacing.lg,

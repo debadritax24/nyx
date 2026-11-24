@@ -613,13 +613,13 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     marginBottom: 6,
   },
   modalSubtitle: {
     fontSize: 13,
     lineHeight: 19,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     marginBottom: Spacing.lg,
   },
   modalBtn: {
@@ -636,6 +636,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 22,
     fontWeight: '600',
-    fontFamily: Typography.fontFamilyMono,
+    fontFamily: Typography?.fontFamilyMono ?? 'monospace',
   },
 });

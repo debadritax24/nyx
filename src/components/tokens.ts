@@ -161,19 +161,19 @@ export const Typography = {
     ios: 'Georgia',
     android: 'serif',
     default: 'serif',
-  }),
+  }) ?? 'serif',
   fontFamilyBody: Platform.select({
     web: "'Inter', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     ios: 'System',
     android: 'sans-serif',
     default: 'sans-serif',
-  }),
+  }) ?? 'sans-serif',
   fontFamilyMono: Platform.select({
     web: "'SF Mono', Monaco, Menlo, Consolas, 'Courier New', monospace",
     ios: 'Courier New',
     android: 'monospace',
     default: 'monospace',
-  }),
+  }) ?? 'monospace',
 };
 
 export const Spacing = {
@@ -231,4 +231,15 @@ export const Shadows = {
       shadowRadius: 16,
     },
   }),
+};
+
+export default {
+  Palette,
+  lightTheme,
+  darkTheme,
+  Colors,
+  Typography,
+  Spacing,
+  Radius,
+  Shadows,
 };

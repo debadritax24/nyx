@@ -763,7 +763,7 @@ const styles = StyleSheet.create({
   settingItemTitle: {
     fontSize: 14,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   settingItemDescription: {
     fontSize: 12,

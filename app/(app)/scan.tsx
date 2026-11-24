@@ -307,12 +307,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   subtitle: {
     fontSize: 13,
     marginTop: 2,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   closeBtn: {
     width: 36,
@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
   tabText: {
     fontSize: 13,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   cameraContainer: {
     flex: 1,
@@ -442,14 +442,14 @@ const styles = StyleSheet.create({
   permissionTitle: {
     fontSize: 20,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     marginBottom: Spacing.xs,
   },
   permissionText: {
     fontSize: 14,
     lineHeight: 22,
     textAlign: 'center',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     marginBottom: Spacing.xl,
   },
   permBtn: {
@@ -477,14 +477,14 @@ const styles = StyleSheet.create({
   uploadTitle: {
     fontSize: 22,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
     marginBottom: 6,
   },
   uploadSubtitle: {
     fontSize: 14,
     lineHeight: 21,
     textAlign: 'center',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
     marginBottom: Spacing.lg,
   },
   uploadErrorBox: {

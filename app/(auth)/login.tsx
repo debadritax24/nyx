@@ -286,12 +286,12 @@ const styles = StyleSheet.create({
   },
   checkboxLabel: {
     fontSize: 13,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   forgotLink: {
     fontSize: 13,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   submitBtn: {
     width: '100%',

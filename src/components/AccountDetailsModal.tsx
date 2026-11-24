@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
   accountName: {
     fontSize: 13,
     marginTop: 2,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   editInputsBox: {
     gap: 4,
@@ -336,7 +336,7 @@ const styles = StyleSheet.create({
   codeText: {
     fontSize: 28,
     fontWeight: '800',
-    fontFamily: Typography.fontFamilyMono,
+    fontFamily: Typography?.fontFamilyMono ?? 'monospace',
     fontVariant: ['tabular-nums'],
     letterSpacing: 2,
   },
@@ -375,12 +375,12 @@ const styles = StyleSheet.create({
   },
   metaLabel: {
     fontSize: 13,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   metaValue: {
     fontSize: 13,
     fontWeight: '600',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   actions: {
     flexDirection: 'row',

@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
   tabText: {
     fontSize: 12,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   fieldHint: {
     fontSize: 11,

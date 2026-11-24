@@ -186,12 +186,12 @@ const styles = StyleSheet.create({
   sentTitle: {
     fontSize: 16,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   sentDesc: {
     fontSize: 13,
     lineHeight: 20,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   returnBtn: {
     marginTop: Spacing.sm,

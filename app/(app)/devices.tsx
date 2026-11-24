@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
   deviceName: {
     fontSize: 15,
     fontWeight: '700',
-    fontFamily: Typography.fontFamilyHeading,
+    fontFamily: Typography?.fontFamilyHeading ?? 'serif',
   },
   thisBadge: {
     paddingHorizontal: 8,
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
   deviceMeta: {
     fontSize: 11,
     marginTop: 2,
-    fontFamily: Typography.fontFamilyBody,
+    fontFamily: Typography?.fontFamilyBody ?? 'sans-serif',
   },
   revokeBtn: {
     paddingHorizontal: 12,
