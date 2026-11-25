@@ -1,4 +1,4 @@
-# NYX
+                                                                  # NYX
 
 <p align="center">
   <strong>Zero-Knowledge, Offline-First TOTP Authenticator for Android</strong><br>
